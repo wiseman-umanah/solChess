@@ -44,7 +44,7 @@ export default function LeftSidebar({ onClickUser }: LeftSidebarProps) {
       {/* Profile section */}
       <div className="px-4 py-4" style={{ borderBottom: '1px solid #2a2a3a' }}>
         <div className="flex items-center gap-3">
-          <Avatar username={displayUsername} size="lg" online gradientBorder />
+          <Avatar username={displayUsername} size="lg" online />
           <div className="min-w-0">
             <p className="text-sm font-semibold text-white truncate">{displayUsername}</p>
             <p className="text-[11px] truncate" style={{ color: '#8888aa' }}>{displayWallet}</p>
