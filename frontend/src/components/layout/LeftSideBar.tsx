@@ -1,4 +1,3 @@
-import Avatar from '../ui/Avatar'
 import PlayerStats from '../stats/PlayerStats'
 import WorldChat from '../chat/WorldChat'
 import { useUserStore } from '../../stores/userStore'
@@ -18,11 +17,8 @@ interface LeftSidebarProps {
 }
 
 export default function LeftSidebar({ onClickUser }: LeftSidebarProps) {
-  const { wallet, username, stats, trustScore } = useUserStore()
+  const { stats, trustScore } = useUserStore()
   const { setActivePrivateChat } = useChatStore()
-
-  const displayUsername = username ?? 'GrandmasterX'
-  const displayWallet = wallet ?? 'GmX1...9kPq'
   const displayStats = stats ?? MOCK_STATS
   const displayTrust = trustScore > 0 ? trustScore : MOCK_TRUST
 
@@ -41,16 +37,6 @@ export default function LeftSidebar({ onClickUser }: LeftSidebarProps) {
       }}
       aria-label="Left sidebar"
     >
-      {/* Profile section */}
-      <div className="px-4 py-4" style={{ borderBottom: '1px solid #2a2a3a' }}>
-        <div className="flex items-center gap-3">
-          <Avatar username={displayUsername} size="lg" online />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-white truncate">{displayUsername}</p>
-            <p className="text-[11px] truncate" style={{ color: '#8888aa' }}>{displayWallet}</p>
-          </div>
-        </div>
-      </div>
 
       {/* Stats section */}
       <div className="px-4 py-4" style={{ borderBottom: '1px solid #2a2a3a' }}>

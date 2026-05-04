@@ -7,11 +7,17 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
-  define: {
-    'process.env': {},
-    global: 'globalThis',
+  resolve: {
+    alias: {
+      buffer: 'buffer',
+    },
   },
-//   optimizeDeps: {
-//     include: ['buffer'],
-//   },
+  optimizeDeps: {
+    include: ['buffer'],
+    esbuildOptions: {
+      define: {
+        global: 'globalThis',
+      },
+    },
+  },
 })
