@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import ConnectButton from '../wallet/ConnectButton'
 
 const NAV_LINKS = [
@@ -6,8 +6,47 @@ const NAV_LINKS = [
   { label: 'Leaderboard', path: '/leaderboard' },
 ]
 
+function GradientArrow({ direction, onClick, disabled }: {
+  direction: 'back' | 'forward'
+  onClick: () => void
+  disabled: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={direction === 'back' ? 'Go back' : 'Go forward'}
+      className="flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-150 disabled:opacity-20 disabled:cursor-not-allowed hover:scale-110"
+      style={{
+        background: disabled ? 'transparent' : 'rgba(153,69,255,0.08)',
+        border: disabled ? '1px solid #2a2a3a' : '1px solid transparent',
+        backgroundImage: disabled ? 'none' : 'linear-gradient(#13131a, #13131a), linear-gradient(135deg, #9945FF, #14F195)',
+        backgroundOrigin: 'border-box',
+        backgroundClip: disabled ? undefined : 'padding-box, border-box',
+      }}
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        {direction === 'back'
+          ? <path d="M8 2L4 6L8 10" stroke="url(#sol-grad)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          : <path d="M4 2L8 6L4 10" stroke="url(#sol-grad)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        }
+        <defs>
+          <linearGradient id="sol-grad" x1="0" y1="0" x2="0" y2="12" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#9945FF" />
+            <stop offset="1" stopColor="#14F195" />
+          </linearGradient>
+        </defs>
+      </svg>
+    </button>
+  )
+}
+
 export default function Header() {
   const { pathname } = useLocation()
+  const navigate = useNavigate()
+
+  const canGoBack = window.history.state?.idx > 0
+  const canGoForward = window.history.state?.idx < (window.history.length - 1)
 
   return (
     <header
@@ -28,7 +67,10 @@ export default function Header() {
       </Link>
 
       {/* Nav */}
-      <nav className="flex items-center gap-6" aria-label="Main navigation">
+      <nav className="flex items-center gap-3" aria-label="Main navigation">
+        {/* Back / Forward */}
+        <GradientArrow direction="back" onClick={() => navigate(-1)} disabled={!canGoBack} />
+
         {NAV_LINKS.map((link) => {
           const active = pathname === link.path
           return (
@@ -49,6 +91,8 @@ export default function Header() {
             </Link>
           )
         })}
+
+		<GradientArrow direction="forward" onClick={() => navigate(1)} disabled={!canGoForward} />
       </nav>
 
       {/* Wallet */}
