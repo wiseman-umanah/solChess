@@ -58,7 +58,7 @@ export default function DoubleButton({
         disabled={disabled}
         aria-disabled={disabled}
         className={`
-          relative z-10 flex items-center gap-2 font-semibold
+          relative z-10 w-full flex items-center gap-2 font-semibold
           tracking-wide uppercase transition-transform duration-75
           ${sizeClasses[size]}
           ${pressed ? 'translate-x-[3px] translate-y-[3px]' : ''}

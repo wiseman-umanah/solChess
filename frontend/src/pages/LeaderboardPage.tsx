@@ -59,7 +59,7 @@ export default function LeaderboardPage() {
 
       {/* Full table */}
       <div
-        className="rounded-xl overflow-hidden"
+        className=" overflow-hidden"
         style={{ border: '1.5px solid #2a2a3a' }}
       >
         <table className="w-full">

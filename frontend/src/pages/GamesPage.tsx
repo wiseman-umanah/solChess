@@ -218,7 +218,7 @@ function GameCard({ game }: { game: GameListing }) {
   const leadColor = whitePct >= 50 ? '#9945FF' : '#14F195'
 
   return (
-    <Link to={`/game/${game.id}`} className="block group">
+    <Link to={`/games/${game.id}`} className="block group">
       <div
         className="relative flex flex-col gap-3 p-4 transition-all duration-200 group-hover:translate-y-[-2px]"
         style={{

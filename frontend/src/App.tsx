@@ -14,7 +14,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/games" element={<GamesPage />} />
-          <Route path="/game/:id" element={<GamePage />} />
+          <Route path="/games/:id" element={<GamePage />} />
           <Route path="/puzzles" element={<PuzzlesPage />} />
           <Route path="/practice" element={<PracticePage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />

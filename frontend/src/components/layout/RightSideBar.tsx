@@ -63,7 +63,7 @@ export default function RightSidebar({ activePrivateChat, activeChatUsername }: 
           {MOCK_LIVE_GAMES.map((game) => (
             <Link
               key={game.id}
-              to={`/game/${game.id}`}
+              to={`/games/${game.id}`}
               className="block p-2.5 transition-all hover:border-purple-500/50"
               style={{ background: '#0a0a0f', border: '1px solid #2a2a3a' }}
               aria-label={`Spectate ${game.whiteName} vs ${game.blackName}`}
