@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import ConnectButton from '../wallet/ConnectButton'
 
 const NAV_LINKS = [
-  { label: 'Games', path: '/join' },
+  { label: 'Games', path: '/games' },
   { label: 'Leaderboard', path: '/leaderboard' },
 ]
 
