@@ -4,8 +4,8 @@ import prisma from '../db/prisma.js'
 import { createGame, joinGame, joinByCode } from '../services/gameService.js'
 
 const gameInclude = {
-  white: { select: { wallet: true, username: true, avatar: true, trustScore: true, stats: true } },
-  black: { select: { wallet: true, username: true, avatar: true, trustScore: true, stats: true } },
+  white: { select: { wallet: true, username: true, trustScore: true, stats: true } },
+  black: { select: { wallet: true, username: true, trustScore: true, stats: true } },
   moves: { orderBy: { timestamp: 'asc' as const } },
 }
 

@@ -1,15 +1,15 @@
 model User {
   wallet     String    @id
   username   String?   @unique
-  avatar     String?
   trustScore Int       @default(50)
   createdAt  DateTime  @default(now())
 
-  stats      UserStats?
-  gamesWhite Game[]    @relation("WhitePlayer")
-  gamesBlack Game[]    @relation("BlackPlayer")
-  stakes     Stake[]
-  messages   Message[]
+  stats         UserStats?
+  gamesWhite    Game[]         @relation("WhitePlayer")
+  gamesBlack    Game[]         @relation("BlackPlayer")
+  stakes        Stake[]
+  messages      Message[]
+  refreshTokens RefreshToken[]
 }
 
 model UserStats {

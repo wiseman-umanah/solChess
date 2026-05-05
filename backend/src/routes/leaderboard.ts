@@ -17,7 +17,6 @@ export default async function leaderboardRoutes(app: FastifyInstance) {
       rank: offset + i + 1,
       wallet: u.wallet,
       username: u.username,
-      avatar: u.avatar,
       trustScore: u.trustScore,
       stats: u.stats,
     }))

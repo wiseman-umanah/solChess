@@ -9,11 +9,10 @@ export default async function chatRoutes(app: FastifyInstance) {
       where: { room: 'world' },
       orderBy: { timestamp: 'desc' },
       take: limit,
-      include: { sender: { select: { username: true, avatar: true } } },
+      include: { sender: { select: { username: true } } },
     })
   })
 
-  // DM history between two wallets
   // DM history — requires ?with=<otherWallet>
   app.get<{ Params: { wallet: string }; Querystring: { with: string; limit?: string } }>(
     '/chat/:wallet',
@@ -26,7 +25,7 @@ export default async function chatRoutes(app: FastifyInstance) {
         where: { room },
         orderBy: { timestamp: 'desc' },
         take: limit,
-        include: { sender: { select: { username: true, avatar: true } } },
+        include: { sender: { select: { username: true } } },
       })
     },
   )

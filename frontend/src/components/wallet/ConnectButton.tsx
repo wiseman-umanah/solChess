@@ -1,6 +1,8 @@
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { useWallet } from '../../hooks/useWallet'
 import { useUserStore } from '../../stores/userStore'
+import { useAuthStore } from '../../stores/authStore'
+import { api } from '../../lib/apiClient'
 import Avatar from '../ui/Avatar'
 import { useState, useRef, useEffect } from 'react'
 
@@ -16,6 +18,8 @@ function ProfileDropdown({
   const { username, setUsername } = useUserStore()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(username ?? '')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -26,10 +30,21 @@ function ProfileDropdown({
     return () => document.removeEventListener('mousedown', handler)
   }, [onClose])
 
-  function saveUsername() {
+  async function saveUsername() {
     const trimmed = draft.trim()
-    if (trimmed) setUsername(trimmed)
-    setEditing(false)
+    if (!trimmed || trimmed === username) { setEditing(false); return }
+
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const updated = await api.patch<{ username: string }>('/api/v1/users/me', { username: trimmed })
+      setUsername(updated.username)
+      setEditing(false)
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : 'Could not save username')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -51,23 +66,31 @@ function ProfileDropdown({
       <div className="px-4 py-3" style={{ borderBottom: '1px solid #2a2a3a' }}>
         <p className="text-[9px] uppercase tracking-widest mb-1.5" style={{ color: '#55556a' }}>Username</p>
         {editing ? (
-          <div className="flex gap-1.5">
-            <input
-              autoFocus
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') saveUsername(); if (e.key === 'Escape') setEditing(false) }}
-              className="flex-1 px-2 py-1 text-xs bg-transparent outline-none"
-              style={{ border: '1px solid #9945FF', color: '#ffffff' }}
-              maxLength={24}
-            />
-            <button
-              onClick={saveUsername}
-              className="px-2 py-1 text-[9px] font-bold"
-              style={{ background: 'rgba(153,69,255,0.15)', color: '#9945FF', border: '1px solid #9945FF' }}
-            >
-              Save
-            </button>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex gap-1.5">
+              <input
+                autoFocus
+                value={draft}
+                onChange={e => { setDraft(e.target.value); setSaveError(null) }}
+                onKeyDown={e => { if (e.key === 'Enter') saveUsername(); if (e.key === 'Escape') setEditing(false) }}
+                className="flex-1 px-2 py-1 text-xs bg-transparent outline-none"
+                style={{ border: '1px solid #9945FF', color: '#ffffff' }}
+                maxLength={24}
+                minLength={3}
+                disabled={saving}
+              />
+              <button
+                onClick={saveUsername}
+                disabled={saving}
+                className="px-2 py-1 text-[9px] font-bold disabled:opacity-50"
+                style={{ background: 'rgba(153,69,255,0.15)', color: '#9945FF', border: '1px solid #9945FF' }}
+              >
+                {saving ? '...' : 'Save'}
+              </button>
+            </div>
+            {saveError && (
+              <p className="text-[10px]" style={{ color: '#FF3B30' }}>{saveError}</p>
+            )}
           </div>
         ) : (
           <button
@@ -112,21 +135,26 @@ function ProfileDropdown({
 export default function ConnectButton() {
   const { connected, connecting, disconnect, truncateAddress } = useWallet()
   const { setVisible } = useWalletModal()
-  const { wallet, balance } = useUserStore()
+  const { wallet, balance, username } = useUserStore()
+  const authStatus = useAuthStore((s) => s.status)
   const [open, setOpen] = useState(false)
 
-  if (connecting) {
+  // Show spinner while auth is in progress
+  if (connecting || authStatus === 'signing' || authStatus === 'authenticating' || authStatus === 'restoring') {
     return (
       <div
-        className="flex items-center gap-2 px-4 py-1.5 rounded-[8px] text-sm font-semibold"
+        className="flex items-center gap-2 px-4 py-1.5 text-sm font-semibold"
         style={{ background: '#13131a', border: '1.5px solid #2a2a3a', color: '#8888aa' }}
       >
-        Connecting...
+        {authStatus === 'signing' ? 'Sign message…' : authStatus === 'restoring' ? 'Restoring…' : 'Connecting…'}
       </div>
     )
   }
 
   if (connected && wallet) {
+    // Show username if set, otherwise truncated wallet
+    const displayName = username || truncateAddress(wallet)
+
     return (
       <div className="relative">
         <button
@@ -134,8 +162,8 @@ export default function ConnectButton() {
           className="flex items-center gap-2 px-3 py-1.5 transition-all hover:opacity-90"
           style={{ background: '#13131a', border: '1.5px solid #2a2a3a' }}
         >
-          <Avatar username={wallet} size="sm" />
-          <span className="text-xs font-medium text-white">{truncateAddress(wallet)}</span>
+          <Avatar username={username || wallet} size="sm" />
+          <span className="text-xs font-medium text-white">{displayName}</span>
           <svg
             width="10" height="10" viewBox="0 0 10 10" fill="none"
             className="transition-transform duration-150"

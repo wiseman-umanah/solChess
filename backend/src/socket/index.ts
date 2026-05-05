@@ -19,8 +19,8 @@ export function registerSocketHandlers(io: Server) {
       const game = await prisma.game.findUnique({
         where: { id: gameId },
         include: {
-          white: { select: { wallet: true, username: true, avatar: true, trustScore: true } },
-          black: { select: { wallet: true, username: true, avatar: true, trustScore: true } },
+          white: { select: { wallet: true, username: true, trustScore: true } },
+          black: { select: { wallet: true, username: true, trustScore: true } },
           moves: { orderBy: { timestamp: 'asc' } },
         },
       })
@@ -76,7 +76,7 @@ export function registerSocketHandlers(io: Server) {
 
       const msg = await prisma.message.create({
         data: { room: 'world', senderWallet: socket.wallet, content: trimmed },
-        include: { sender: { select: { username: true, avatar: true } } },
+        include: { sender: { select: { username: true } } },
       })
       io.emit('world-message', msg)
     })
@@ -89,7 +89,7 @@ export function registerSocketHandlers(io: Server) {
       const room = [socket.wallet, toWallet].sort().join(':')
       const msg = await prisma.message.create({
         data: { room, senderWallet: socket.wallet, content: trimmed },
-        include: { sender: { select: { username: true, avatar: true } } },
+        include: { sender: { select: { username: true } } },
       })
 
       // Emit to both participants' personal rooms (they join a room named by their wallet on connect)

@@ -1,45 +1,66 @@
 import { useRef, useEffect, useState } from 'react'
 import ChatMessage from './ChatMessage'
+import { api } from '../../lib/apiClient'
+import { socket } from '../../lib/socket'
+import { useUserStore } from '../../stores/userStore'
+import { useAuthStore } from '../../stores/authStore'
 import type { Message } from '../../types'
 
-const MOCK_MESSAGES: Message[] = [
-  { id: '1', sender: 'GrandmasterX', senderWallet: 'GmX1...9kPq', content: 'gg wp that endgame was clean', timestamp: Date.now() - 300000 },
-  { id: '2', sender: 'SolKnight', senderWallet: 'SoK2...3mRt', content: 'anyone want a 5min game? staking 0.5 SOL', timestamp: Date.now() - 240000 },
-  { id: '3', sender: 'ChainPawn', senderWallet: 'ChP3...7nVx', content: 'sick move on f7 👀', timestamp: Date.now() - 180000 },
-  { id: '4', sender: 'BlockRook', senderWallet: 'BlR4...2kWy', content: 'prize pool on game #4421 is insane rn', timestamp: Date.now() - 120000 },
-  { id: '5', sender: 'ZeroLatency', senderWallet: 'ZeL5...8pQz', content: 'finally got my trust score to 90!', timestamp: Date.now() - 60000 },
-  { id: '6', sender: 'SolKnight', senderWallet: 'SoK2...3mRt', content: 'congrats! took me weeks', timestamp: Date.now() - 30000 },
-]
+interface BackendMessage {
+  id: string
+  senderWallet: string
+  content: string
+  timestamp: string
+  sender: { username: string | null }
+}
+
+function adapt(m: BackendMessage): Message {
+  return {
+    id: m.id,
+    sender: m.sender?.username ?? `${m.senderWallet.slice(0, 4)}...${m.senderWallet.slice(-4)}`,
+    senderWallet: m.senderWallet,
+    content: m.content,
+    timestamp: new Date(m.timestamp).getTime(),
+  }
+}
 
 interface WorldChatProps {
-  onClickUser?: (wallet: string) => void
+  onClickUser?: (wallet: string, username: string) => void
 }
 
 export default function WorldChat({ onClickUser }: WorldChatProps) {
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES)
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const { wallet, username } = useUserStore()
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated())
 
+  // Load history on mount
+  useEffect(() => {
+    api.get<BackendMessage[]>('/api/v1/chat/world?limit=100')
+      .then((data) => setMessages(data.map(adapt).reverse()))
+      .catch(() => {}) // not fatal — messages will still arrive via socket
+  }, [])
+
+  // Subscribe to incoming world messages
+  useEffect(() => {
+    function onMessage(m: BackendMessage) {
+      setMessages((prev) => [...prev, adapt(m)])
+    }
+    socket.on('world-message', onMessage)
+    return () => { socket.off('world-message', onMessage) }
+  }, [])
+
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
   function handleSend() {
     const text = input.trim()
-    if (!text) return
-    const msg: Message = {
-      id: Date.now().toString(),
-      sender: 'You',
-      senderWallet: 'You...0000',
-      content: text,
-      timestamp: Date.now(),
-    }
-    setMessages((prev) => [...prev, msg])
+    if (!text || !isAuthenticated) return
+    socket.emit('world-chat', { content: text })
     setInput('')
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') handleSend()
   }
 
   return (
@@ -48,34 +69,35 @@ export default function WorldChat({ onClickUser }: WorldChatProps) {
         World Chat
       </p>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto min-h-0">
         {messages.map((msg) => (
-          <ChatMessage key={msg.id} message={msg} onClickUser={onClickUser} />
+          <ChatMessage
+            key={msg.id}
+            message={msg}
+            isOwn={msg.senderWallet === wallet}
+            onClickUser={onClickUser ? (w) => onClickUser(w, msg.sender) : undefined}
+          />
         ))}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
       <div className="flex gap-1.5 mt-2 px-1">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Say something..."
-          maxLength={200}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          placeholder={isAuthenticated ? 'Say something...' : 'Connect wallet to chat'}
+          maxLength={500}
+          disabled={!isAuthenticated}
           aria-label="Chat message"
-          className="flex-1 rounded-lg px-3 py-1.5 text-xs outline-none focus:ring-1 transition-all"
-          style={{
-            background: '#0a0a0f',
-            border: '1px solid #2a2a3a',
-            color: '#ffffff',
-          }}
+          className="flex-1 rounded-lg px-3 py-1.5 text-xs outline-none focus:ring-1 transition-all disabled:opacity-40"
+          style={{ background: '#0a0a0f', border: '1px solid #2a2a3a', color: '#ffffff' }}
         />
         <button
           onClick={handleSend}
+          disabled={!isAuthenticated || !input.trim()}
           aria-label="Send message"
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
           style={{ background: '#9945FF', color: '#ffffff' }}
         >
           ↑

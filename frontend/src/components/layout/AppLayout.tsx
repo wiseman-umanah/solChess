@@ -3,12 +3,14 @@ import Header from './Header'
 import LeftSidebar from './LeftSideBar'
 import RightSidebar from './RightSideBar'
 import ActionBar from './ActionBar'
+import { useSocketLifecycle } from '../../hooks/useSocket'
 
 interface AppLayoutProps {
   children: React.ReactNode
 }
 
 export default function AppLayout({ children }: AppLayoutProps) {
+  useSocketLifecycle()
   const [activePrivateChat, setActivePrivateChat] = useState<string | null>(null)
   const [activeChatUsername, setActiveChatUsername] = useState<string | null>(null)
 

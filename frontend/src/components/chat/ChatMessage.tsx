@@ -3,6 +3,7 @@ import type { Message } from '../../types'
 
 interface ChatMessageProps {
   message: Message
+  isOwn?: boolean
   onClickUser?: (wallet: string) => void
 }
 
@@ -15,8 +16,8 @@ function getUserColor(wallet: string): string {
   return gradientColors[wallet.charCodeAt(0) % gradientColors.length]
 }
 
-export default function ChatMessage({ message, onClickUser }: ChatMessageProps) {
-  const color = getUserColor(message.senderWallet)
+export default function ChatMessage({ message, isOwn = false, onClickUser }: ChatMessageProps) {
+  const color = isOwn ? '#14F195' : getUserColor(message.senderWallet)
 
   return (
     <div className="flex gap-2 px-2 py-1.5 hover:bg-white/[0.02] rounded group animate-slide-in">
@@ -28,10 +29,10 @@ export default function ChatMessage({ message, onClickUser }: ChatMessageProps) 
           <button
             className="text-[11px] font-semibold leading-none hover:opacity-80 transition-opacity"
             style={{ color }}
-            onClick={() => onClickUser?.(message.senderWallet)}
+            onClick={() => !isOwn && onClickUser?.(message.senderWallet)}
             aria-label={`View ${message.sender}'s profile`}
           >
-            {message.sender}
+            {isOwn ? 'You' : message.sender}
           </button>
           <span
             className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"

@@ -17,7 +17,11 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:5173'
 
 const app = Fastify({ logger: true })
 
-await app.register(cors, { origin: CORS_ORIGIN, credentials: true })
+await app.register(cors, {
+  origin: CORS_ORIGIN,
+  credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+})
 await app.register(jwt, { secret: process.env.JWT_SECRET ?? 'dev-secret' })
 
 // Routes (all under /api/v1)

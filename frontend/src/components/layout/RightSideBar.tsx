@@ -2,20 +2,13 @@ import { Link } from 'react-router-dom'
 import PrivateChat from '../chat/PrivateChat'
 import LiveIndicator from '../ui/LiveIndicator'
 import Avatar from '../ui/Avatar'
-import type { LiveGame, LeaderboardEntry } from '../../types'
+import { useLeaderboard } from '../../hooks/useLeaderboard'
+import type { LiveGame } from '../../types'
 
 const MOCK_LIVE_GAMES: LiveGame[] = [
   { id: '1', whiteName: 'GrandmasterX', blackName: 'SolKnight', prizePool: 2.5, spectatorCount: 34, timeControl: 5 },
   { id: '2', whiteName: 'ChainPawn', blackName: 'BlockRook', prizePool: 1.0, spectatorCount: 12, timeControl: 3 },
   { id: '3', whiteName: 'ZeroLatency', blackName: 'CryptoKing', prizePool: 5.0, spectatorCount: 89, timeControl: 10 },
-]
-
-const MOCK_LEADERBOARD: LeaderboardEntry[] = [
-  { rank: 1, wallet: 'Gm1x...', username: 'GrandmasterX', trustScore: 98 },
-  { rank: 2, wallet: 'Sk2x...', username: 'SolKnight', trustScore: 95 },
-  { rank: 3, wallet: 'Ze3x...', username: 'ZeroLatency', trustScore: 91 },
-  { rank: 4, wallet: 'Ck4x...', username: 'CryptoKing', trustScore: 88 },
-  { rank: 5, wallet: 'Bp5x...', username: 'BlockPawn', trustScore: 85 },
 ]
 
 interface RightSidebarProps {
@@ -24,6 +17,8 @@ interface RightSidebarProps {
 }
 
 export default function RightSidebar({ activePrivateChat, activeChatUsername }: RightSidebarProps) {
+  const { entries: topPlayers } = useLeaderboard(5)
+
   return (
     <aside
       className="fixed top-[60px] right-0 bottom-0 w-[350px] flex flex-col overflow-hidden"
@@ -92,21 +87,24 @@ export default function RightSidebar({ activePrivateChat, activeChatUsername }: 
           Top Players
         </p>
         <div className="space-y-2">
-          {MOCK_LEADERBOARD.map((entry) => (
-            <div key={entry.rank} className="flex items-center gap-2">
-              <span
-                className="w-4 text-right text-[10px] font-bold flex-shrink-0"
-                style={{ color: entry.rank === 1 ? '#FFD700' : entry.rank === 2 ? '#C0C0C0' : entry.rank === 3 ? '#CD7F32' : '#8888aa' }}
-              >
-                {entry.rank}
-              </span>
-              <Avatar username={entry.username} size="sm" />
-              <span className="text-xs text-white flex-1 truncate">{entry.username}</span>
-              <span className="text-[10px] font-semibold flex-shrink-0" style={{ color: '#9945FF' }}>
-                {entry.trustScore}
-              </span>
-            </div>
-          ))}
+          {topPlayers.map((entry) => {
+            const name = entry.username ?? `${entry.wallet.slice(0, 4)}...${entry.wallet.slice(-4)}`
+            return (
+              <div key={entry.wallet} className="flex items-center gap-2">
+                <span
+                  className="w-4 text-right text-[10px] font-bold flex-shrink-0"
+                  style={{ color: entry.rank === 1 ? '#FFD700' : entry.rank === 2 ? '#C0C0C0' : entry.rank === 3 ? '#CD7F32' : '#8888aa' }}
+                >
+                  {entry.rank}
+                </span>
+                <Avatar username={name} size="sm" />
+                <span className="text-xs text-white flex-1 truncate">{name}</span>
+                <span className="text-[10px] font-semibold flex-shrink-0" style={{ color: '#9945FF' }}>
+                  {entry.trustScore}
+                </span>
+              </div>
+            )
+          })}
         </div>
         <Link
           to="/leaderboard"
