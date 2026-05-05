@@ -1,0 +1,11 @@
+model Message {
+  id           String   @id @default(cuid())
+  room         String   // 'world' or a wallet address (DM room)
+  senderWallet String
+  content      String
+  timestamp    DateTime @default(now())
+
+  sender       User     @relation(fields: [senderWallet], references: [wallet])
+
+  @@index([room, timestamp])
+}

@@ -1,0 +1,11 @@
+model Stake {
+  id        String   @id @default(cuid())
+  gameId    String
+  wallet    String
+  side      String   // 'white' | 'black' | 'support'
+  amount    Float
+  createdAt DateTime @default(now())
+
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [wallet], references: [wallet])
+}

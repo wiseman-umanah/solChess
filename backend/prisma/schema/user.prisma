@@ -1,0 +1,23 @@
+model User {
+  wallet     String    @id
+  username   String?   @unique
+  avatar     String?
+  trustScore Int       @default(50)
+  createdAt  DateTime  @default(now())
+
+  stats      UserStats?
+  gamesWhite Game[]    @relation("WhitePlayer")
+  gamesBlack Game[]    @relation("BlackPlayer")
+  stakes     Stake[]
+  messages   Message[]
+}
+
+model UserStats {
+  wallet       String  @id
+  gamesPlayed  Int     @default(0)
+  gamesWon     Int     @default(0)
+  winRate      Float   @default(0)
+  totalEarnings Float  @default(0)
+
+  user         User    @relation(fields: [wallet], references: [wallet], onDelete: Cascade)
+}

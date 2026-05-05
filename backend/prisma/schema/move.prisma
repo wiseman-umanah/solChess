@@ -1,0 +1,12 @@
+model Move {
+  id        String   @id @default(cuid())
+  gameId    String
+  from      String
+  to        String
+  san       String
+  piece     String
+  color     String   // 'w' | 'b'
+  timestamp DateTime @default(now())
+
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+}

@@ -1,0 +1,27 @@
+model Game {
+  id           String      @id @default(cuid())
+  code         String      @unique
+  whiteWallet  String
+  blackWallet  String?
+  fen          String      @default("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+  status       GameStatus  @default(WAITING)
+  timeControl  Int         // seconds per player
+  prizePool    Float       @default(0)
+  stakesWhite  Float       @default(0)
+  stakesBlack  Float       @default(0)
+  winner       String?     // 'white' | 'black' | 'draw'
+  endReason    String?     // 'checkmate' | 'timeout' | 'resign' | 'draw'
+  createdAt    DateTime    @default(now())
+  endedAt      DateTime?
+
+  white        User        @relation("WhitePlayer", fields: [whiteWallet], references: [wallet])
+  black        User?       @relation("BlackPlayer", fields: [blackWallet], references: [wallet])
+  moves        Move[]
+  stakes       Stake[]
+}
+
+enum GameStatus {
+  WAITING
+  ACTIVE
+  ENDED
+}
