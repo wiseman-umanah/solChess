@@ -1,29 +1,43 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Modal from '../ui/Modal'
+import type { Difficulty } from '../../hooks/useStockfish'
 
 interface PracticeAIModalProps {
   open: boolean
   onClose: () => void
 }
 
-const DIFFICULTIES = [
-  { label: 'Beginner', desc: 'Just learning', color: '#14F195' },
-  { label: 'Intermediate', desc: 'Know the basics', color: '#FFD700' },
-  { label: 'Advanced', desc: 'Competitive play', color: '#FF8C42' },
-  { label: 'Master', desc: 'Brutal difficulty', color: '#FF3B30' },
+const DIFFICULTIES: { label: Difficulty; desc: string; color: string }[] = [
+  { label: 'Beginner',     desc: 'Just learning',    color: '#14F195' },
+  { label: 'Intermediate', desc: 'Know the basics',  color: '#FFD700' },
+  { label: 'Advanced',     desc: 'Competitive play', color: '#FF8C42' },
+  { label: 'Master',       desc: 'Brutal difficulty', color: '#FF3B30' },
 ]
 
+const COLORS = [
+  { value: 'white',  label: '♔ White', desc: 'Play first' },
+  { value: 'black',  label: '♚ Black', desc: 'Respond' },
+  { value: 'random', label: '⚄ Random', desc: 'Surprise me' },
+] as const
+
+type ColorChoice = typeof COLORS[number]['value']
+
 export default function PracticeAIModal({ open, onClose }: PracticeAIModalProps) {
-  const [difficulty, setDifficulty] = useState('Intermediate')
-  const [starting, setStarting] = useState(false)
+  const navigate = useNavigate()
+  const [difficulty, setDifficulty] = useState<Difficulty>('Intermediate')
+  const [color, setColor] = useState<ColorChoice>('white')
 
   function handleStart() {
-    setStarting(true)
-    setTimeout(() => { setStarting(false); onClose() }, 1200)
+    const chosen =
+      color === 'random' ? (Math.random() < 0.5 ? 'white' : 'black') : color
+    onClose()
+    navigate('/practice', { state: { difficulty, color: chosen } })
   }
 
   return (
     <Modal open={open} onClose={onClose}>
+      {/* Header */}
       <div className="flex items-center gap-3 pr-6">
         <div
           className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
@@ -39,9 +53,11 @@ export default function PracticeAIModal({ open, onClose }: PracticeAIModalProps)
 
       {/* Difficulty */}
       <div className="flex flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>Difficulty</p>
+        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>
+          Difficulty
+        </p>
         <div className="grid grid-cols-2 gap-2">
-          {DIFFICULTIES.map(d => (
+          {DIFFICULTIES.map((d) => (
             <button
               key={d.label}
               onClick={() => setDifficulty(d.label)}
@@ -62,15 +78,40 @@ export default function PracticeAIModal({ open, onClose }: PracticeAIModalProps)
         </div>
       </div>
 
+      {/* Color picker */}
+      <div className="flex flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>
+          Play as
+        </p>
+        <div className="flex gap-2">
+          {COLORS.map((c) => (
+            <button
+              key={c.value}
+              onClick={() => setColor(c.value)}
+              className="flex-1 flex flex-col items-center py-3 transition-all duration-150"
+              style={{
+                background: color === c.value ? 'rgba(153,69,255,0.12)' : '#0a0a0f',
+                border: `1.5px solid ${color === c.value ? '#9945FF' : '#2a2a3a'}`,
+                boxShadow: color === c.value ? '0 0 12px rgba(153,69,255,0.25)' : 'none',
+              }}
+              aria-pressed={color === c.value}
+            >
+              <span className="text-base mb-0.5">{c.label}</span>
+              <span className="text-[9px]" style={{ color: '#8888aa' }}>{c.desc}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* CTA */}
       <div className="relative mt-1">
         <div className="absolute w-full h-full" style={{ top: 4, left: 4, background: '#9945FF' }} />
         <button
           onClick={handleStart}
-          disabled={starting}
           className="relative w-full py-3 font-bold text-sm uppercase tracking-widest transition-transform duration-75 active:translate-x-1 active:translate-y-1"
           style={{ background: '#13131a', border: '1.5px solid #9945FF', color: '#9945FF' }}
         >
-          {starting ? 'Starting...' : 'Start Practice'}
+          Start Practice
         </button>
       </div>
     </Modal>

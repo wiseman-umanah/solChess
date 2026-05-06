@@ -5,15 +5,16 @@ import type { Player } from '../../types'
 interface PlayerCardProps {
   player: Player
   color: 'white' | 'black'
-  timeSeconds: number
+  timeSeconds?: number
   isActive: boolean
+  showTimer?: boolean
   onClickPlayer?: (wallet: string) => void
 }
 
-export default function PlayerCard({ player, color, timeSeconds, isActive, onClickPlayer }: PlayerCardProps) {
+export default function PlayerCard({ player, color, timeSeconds = 600, isActive, showTimer = true, onClickPlayer }: PlayerCardProps) {
   return (
     <div
-      className="flex items-center justify-between px-4 py-2 rounded-xl transition-all"
+      className="flex items-center justify-between px-4 py-2  transition-all"
       style={{
         background: isActive ? 'rgba(153,69,255,0.08)' : '#13131a',
         border: `1.5px solid ${isActive ? '#9945FF' : '#2a2a3a'}`,
@@ -44,7 +45,7 @@ export default function PlayerCard({ player, color, timeSeconds, isActive, onCli
         </div>
       </div>
 
-      <Timer initialSeconds={timeSeconds} running={isActive} />
+      {showTimer && <Timer initialSeconds={timeSeconds} running={isActive} />}
     </div>
   )
 }
