@@ -3,6 +3,7 @@ import DoubleButton from '../ui/DoubleButton'
 import CreateModal from '../modals/CreateModal'
 import JoinModal from '../modals/JoinModal'
 import PracticeAIModal from '../modals/PracticeAIModal'
+import PracticeFriendModal from '../modals/PracticeFriendModal'
 
 type ModalState = 'create' | 'join' | 'host' | 'practiceAI' | 'friend' | null
 
@@ -39,9 +40,8 @@ export default function ActionBar() {
         mode="host"
         onClose={() => setModal(null)}
       />
-      <CreateModal
+      <PracticeFriendModal
         open={modal === 'friend'}
-        mode="friend"
         onClose={() => setModal(null)}
       />
       <JoinModal

@@ -1,106 +1,244 @@
-import { useParams } from 'react-router-dom'
-import { useState } from 'react'
-import { Chessboard } from 'react-chessboard'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import ChessBoard from '../components/chess/ChessBoard'
 import MoveHistory from '../components/chess/MoveHistory'
 import LiveIndicator from '../components/ui/LiveIndicator'
 import Avatar from '../components/ui/Avatar'
+import DoubleButton from '../components/ui/DoubleButton'
 import { useChessGame } from '../hooks/useChessGame'
 import { useGameStore } from '../stores/gameStore'
-import { useEffect } from 'react'
+import { useAuthStore } from '../stores/authStore'
+import { useUserStore } from '../stores/userStore'
+import { api } from '../lib/apiClient'
+import { socket } from '../lib/socket'
 import type { Player } from '../types'
-import DoubleButton from '../components/ui/DoubleButton'
 
-const MOCK_WHITE: Player = {
-  wallet: 'GmX1...9kPq',
-  username: 'GrandmasterX',
-  trustScore: 98,
-  stats: { gamesPlayed: 142, gamesWon: 89, winRate: 63, totalEarnings: 12.48 },
-}
-const MOCK_BLACK: Player = {
-  wallet: 'SoK2...3mRt',
-  username: 'SolKnight',
-  trustScore: 95,
-  stats: { gamesPlayed: 210, gamesWon: 130, winRate: 62, totalEarnings: 8.21 },
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface GameData {
+  id: string
+  code: string
+  whiteWallet: string
+  blackWallet: string | null
+  fen: string
+  status: 'WAITING' | 'ACTIVE' | 'ENDED'
+  timeControl: number | null
+  isPractice: boolean
+  creatorColor: string
+  prizePool: number
+  stakesWhite: number
+  stakesBlack: number
+  winner: string | null
+  endReason: string | null
+  white: Player | null
+  black: Player | null
+  moves: { from: string; to: string; san: string; piece: string; color: string }[]
 }
 
-const SUPPORT_CHIPS = [0.01, 0.05, 0.1, 0.25]
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(s: number) {
   return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
 }
 
-// ─── Left panel: stakes + pool support ───────────────────────────────────────
+function truncate(wallet: string) {
+  return `${wallet.slice(0, 5)}…${wallet.slice(-4)}`
+}
 
-// Clamp to 2dp, min 0.01
+function displayName(p: Player | null, wallet: string | null) {
+  if (!wallet) return '—'
+  return p?.username ?? truncate(wallet)
+}
+
+const SUPPORT_CHIPS = [0.01, 0.05, 0.1, 0.25]
+
 function sanitizeAmount(raw: string): number | null {
   const v = parseFloat(parseFloat(raw).toFixed(2))
   return isNaN(v) || v < 0.01 ? null : v
 }
 
+// ─── Winner overlay ───────────────────────────────────────────────────────────
+
+function WinnerOverlay({
+  winner,
+  reason,
+  playerColor,
+  isPractice,
+  onRematch,
+  onLeave,
+}: {
+  winner: string
+  reason: string | null
+  playerColor: 'white' | 'black' | null
+  isPractice: boolean
+  onRematch?: () => void
+  onLeave: () => void
+}) {
+  const isWin = playerColor && winner === playerColor
+  const isDraw = winner === 'draw'
+  const emoji = isDraw ? '🤝' : isWin ? '🏆' : playerColor ? '💀' : '🏁'
+  const title = isDraw ? 'Draw!' : isWin ? 'You Win!' : playerColor ? 'You Lose' : `${winner.charAt(0).toUpperCase() + winner.slice(1)} Wins`
+  const color = isDraw ? '#FFD700' : (isWin || !playerColor) ? '#14F195' : '#FF3B30'
+  const reasonLabel = reason === 'checkmate' ? 'by checkmate' : reason === 'timeout' ? 'on time' : reason === 'resign' ? 'by resignation' : reason === 'disconnect' ? 'opponent disconnected' : reason ?? ''
+
+  return (
+    <div
+      className="absolute inset-0 flex flex-col items-center justify-center gap-4 z-10"
+      style={{ background: 'rgba(10,10,15,0.9)', backdropFilter: 'blur(4px)' }}
+    >
+      <div className="text-6xl">{emoji}</div>
+      <h2 className="text-3xl font-bold" style={{ color }}>{title}</h2>
+      {reasonLabel && <p className="text-sm capitalize" style={{ color: '#8888aa' }}>{reasonLabel}</p>}
+      <div className="flex gap-3 mt-2">
+        {isPractice && onRematch && (
+          <button
+            onClick={onRematch}
+            className="px-6 py-2.5 font-bold text-sm"
+            style={{ background: color, color: '#0a0a0f' }}
+          >
+            Rematch
+          </button>
+        )}
+        <button
+          onClick={onLeave}
+          className="px-6 py-2.5 font-bold text-sm"
+          style={{ background: '#13131a', border: '1.5px solid #2a2a3a', color: '#8888aa' }}
+        >
+          Leave
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Opponent disconnected banner ─────────────────────────────────────────────
+
+function DisconnectBanner({ isPractice, isUntimed }: { isPractice: boolean; isUntimed: boolean }) {
+  if (!isPractice) return null
+  return (
+    <div
+      className="px-4 py-2 text-xs font-semibold text-center"
+      style={{ background: 'rgba(255,140,66,0.12)', border: '1px solid #FF8C42', color: '#FF8C42' }}
+    >
+      {isUntimed
+        ? 'Opponent disconnected. Game is paused — they can rejoin anytime.'
+        : 'Opponent disconnected. They have 30s to reconnect or you win.'}
+    </div>
+  )
+}
+
+// ─── Undo request banner ──────────────────────────────────────────────────────
+
+function UndoBanner({
+  byWallet,
+  onAccept,
+  onDecline,
+}: {
+  byWallet: string
+  onAccept: () => void
+  onDecline: () => void
+}) {
+  const [countdown, setCountdown] = useState(15)
+
+  useEffect(() => {
+    const t = setInterval(() => setCountdown(c => c - 1), 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  return (
+    <div
+      className="px-4 py-3 flex items-center justify-between gap-3"
+      style={{ background: 'rgba(153,69,255,0.1)', border: '1px solid #9945FF' }}
+    >
+      <p className="text-xs" style={{ color: '#9945FF' }}>
+        {truncate(byWallet)} wants to undo their last move
+        <span className="ml-2 opacity-60">({countdown}s)</span>
+      </p>
+      <div className="flex gap-2 flex-shrink-0">
+        <button
+          onClick={onAccept}
+          className="px-3 py-1 text-xs font-bold"
+          style={{ background: 'rgba(20,241,149,0.15)', border: '1px solid #14F195', color: '#14F195' }}
+        >
+          Accept
+        </button>
+        <button
+          onClick={onDecline}
+          className="px-3 py-1 text-xs font-bold"
+          style={{ background: 'rgba(255,59,48,0.1)', border: '1px solid #FF3B30', color: '#FF3B30' }}
+        >
+          Decline
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Left panel (public games only) ──────────────────────────────────────────
+
 function LeftPanel({
+  gameId,
   supportPool,
   stakesWhite,
   stakesBlack,
-  onStake,
-  onSupport,
 }: {
+  gameId: string
   supportPool: number
   stakesWhite: number
   stakesBlack: number
-  onStake: (side: 'white' | 'black', amount: number) => void
-  onSupport: (amount: number) => void
 }) {
   const [activeTab, setActiveTab] = useState<'stake' | 'support'>('stake')
   const [stakeInput, setStakeInput] = useState('')
   const [stakeError, setStakeError] = useState('')
   const [supportInput, setSupportInput] = useState('')
   const [supportError, setSupportError] = useState('')
+  const [localStakesW, setLocalStakesW] = useState(stakesWhite)
+  const [localStakesB, setLocalStakesB] = useState(stakesBlack)
+  const [localPool, setLocalPool] = useState(supportPool)
 
-  const totalStaked = stakesWhite + stakesBlack
-  const whitePct = totalStaked > 0 ? (stakesWhite / totalStaked) * 100 : 50
+  const totalStaked = localStakesW + localStakesB
+  const whitePct = totalStaked > 0 ? (localStakesW / totalStaked) * 100 : 50
   const blackPct = 100 - whitePct
 
-  function handleStake(side: 'white' | 'black') {
+  async function handleStake(side: 'white' | 'black') {
     const v = sanitizeAmount(stakeInput)
     if (!v) { setStakeError('Min 0.01 SOL, max 2 decimal places'); return }
     setStakeError('')
-    onStake(side, v)
-    setStakeInput('')
+    try {
+      await api.post(`/api/v1/games/${gameId}/stake`, { side, amount: v })
+      if (side === 'white') setLocalStakesW(p => parseFloat((p + v).toFixed(2)))
+      else setLocalStakesB(p => parseFloat((p + v).toFixed(2)))
+      setStakeInput('')
+    } catch (e: unknown) {
+      setStakeError(e instanceof Error ? e.message : 'Failed')
+    }
   }
 
-  function handleSupport(amount: number) {
-    onSupport(amount)
+  async function handleSupport(amount: number) {
+    try {
+      await api.post(`/api/v1/games/${gameId}/support`, { amount })
+      setLocalPool(p => parseFloat((p + amount).toFixed(2)))
+    } catch { /* ignore */ }
   }
 
-  function handleCustomSupport() {
+  async function handleCustomSupport() {
     const v = sanitizeAmount(supportInput)
     if (!v) { setSupportError('Min 0.01 SOL, max 2 decimal places'); return }
     setSupportError('')
-    onSupport(v)
+    await handleSupport(v)
     setSupportInput('')
   }
 
   return (
-    <div
-      className="flex flex-col gap-3 h-full p-2"
-      style={{ background: '#13131a', border: '1.5px solid #2a2a3a' }}
-    >
-      {/* Prize pool — support only */}
-      <div
-        className="flex flex-col items-center py-3 flex-shrink-0"
-        style={{ background: '#0a0a0f', border: '1px solid #2a2a3a' }}
-      >
-        <p className="text-[9px] font-semibold uppercase tracking-widest mb-0.5" style={{ color: '#8888aa' }}>
-          Prize Pool
-        </p>
+    <div className="flex flex-col gap-3 h-full p-2" style={{ background: '#13131a', border: '1.5px solid #2a2a3a' }}>
+      <div className="flex flex-col items-center py-3 flex-shrink-0" style={{ background: '#0a0a0f', border: '1px solid #2a2a3a' }}>
+        <p className="text-[9px] font-semibold uppercase tracking-widest mb-0.5" style={{ color: '#8888aa' }}>Prize Pool</p>
         <p className="text-2xl font-bold" style={{ color: '#FFD700' }}>
-          {supportPool.toFixed(2)}
-          <span className="text-sm ml-1" style={{ color: '#8888aa' }}>SOL</span>
+          {localPool.toFixed(2)}<span className="text-sm ml-1" style={{ color: '#8888aa' }}>SOL</span>
         </p>
         <p className="text-[9px] mt-0.5" style={{ color: '#55556a' }}>Community supported · Winner takes all</p>
       </div>
 
-      {/* Stake split bar */}
       <div className="flex flex-col gap-1 flex-shrink-0">
         <div className="flex justify-between text-[9px]">
           <span style={{ color: '#9945FF' }}>♔ {whitePct.toFixed(0)}%</span>
@@ -111,47 +249,29 @@ function LeftPanel({
           <div className="h-full transition-all duration-500" style={{ width: `${blackPct}%`, background: '#14F195' }} />
         </div>
         <div className="flex justify-between text-[9px]" style={{ color: '#8888aa' }}>
-          <span>{stakesWhite.toFixed(2)} SOL</span>
-          <span>{stakesBlack.toFixed(2)} SOL</span>
+          <span>{localStakesW.toFixed(2)} SOL</span>
+          <span>{localStakesB.toFixed(2)} SOL</span>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div
-        className="flex overflow-hidden flex-shrink-0"
-        style={{ background: '#0a0a0f', border: '1px solid #2a2a3a' }}
-      >
+      <div className="flex overflow-hidden flex-shrink-0" style={{ background: '#0a0a0f', border: '1px solid #2a2a3a' }}>
         {(['stake', 'support'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
+          <button key={tab} onClick={() => setActiveTab(tab)}
             className="flex-1 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-all"
             style={{
               background: activeTab === tab ? (tab === 'stake' ? 'rgba(153,69,255,0.15)' : 'rgba(255,215,0,0.1)') : 'transparent',
               color: activeTab === tab ? (tab === 'stake' ? '#9945FF' : '#FFD700') : '#8888aa',
             }}
-          >
-            {tab === 'stake' ? 'Stake' : 'Support'}
-          </button>
+          >{tab}</button>
         ))}
       </div>
 
-      {/* Stake tab */}
       {activeTab === 'stake' && (
         <div className="flex flex-col gap-3 flex-1">
-          <p className="text-[9px]" style={{ color: '#8888aa' }}>
-            Enter an amount and pick your side. You profit if your pick wins.
-          </p>
-
-          {/* Single input */}
-          <div
-            className="flex items-center overflow-hidden"
-            style={{ border: `1px solid ${stakeError ? '#FF3B30' : '#2a2a3a'}`, background: '#0a0a0f' }}
-          >
+          <p className="text-[9px]" style={{ color: '#8888aa' }}>Enter amount and pick a side. You profit if your pick wins.</p>
+          <div className="flex items-center overflow-hidden" style={{ border: `1px solid ${stakeError ? '#FF3B30' : '#2a2a3a'}`, background: '#0a0a0f' }}>
             <span className="pl-2 text-[10px]" style={{ color: '#8888aa' }}>SOL</span>
-            <input
-              type="number" min="0.01" step="0.01"
-              value={stakeInput}
+            <input type="number" min="0.01" step="0.01" value={stakeInput}
               onChange={e => { setStakeInput(e.target.value); setStakeError('') }}
               onKeyDown={e => e.key === 'Enter' && handleStake('white')}
               placeholder="0.01"
@@ -160,84 +280,39 @@ function LeftPanel({
             />
           </div>
           {stakeError && <p className="text-[9px]" style={{ color: '#FF3B30' }}>{stakeError}</p>}
-
-          {/* Side buttons */}
           <div className="flex gap-2">
-            <button
-              onClick={() => handleStake('white')}
-              className="flex-1 py-2.5 text-xs font-bold transition-all hover:opacity-90 active:scale-95"
-              style={{ background: 'rgba(153,69,255,0.12)', border: '1.5px solid #9945FF', color: '#9945FF' }}
-            >
-              ♔ White
-            </button>
-            <button
-              onClick={() => handleStake('black')}
-              className="flex-1 py-2.5 text-xs font-bold transition-all hover:opacity-90 active:scale-95"
-              style={{ background: 'rgba(20,241,149,0.1)', border: '1.5px solid #14F195', color: '#14F195' }}
-            >
-              ♚ Black
-            </button>
+            <button onClick={() => handleStake('white')} className="flex-1 py-2.5 text-xs font-bold transition-all hover:opacity-90"
+              style={{ background: 'rgba(153,69,255,0.12)', border: '1.5px solid #9945FF', color: '#9945FF' }}>♔ White</button>
+            <button onClick={() => handleStake('black')} className="flex-1 py-2.5 text-xs font-bold transition-all hover:opacity-90"
+              style={{ background: 'rgba(20,241,149,0.1)', border: '1.5px solid #14F195', color: '#14F195' }}>♚ Black</button>
           </div>
-
-          <p className="text-[9px] text-center" style={{ color: '#55556a' }}>
-            Winnings paid on-chain · Min 0.01 SOL
-          </p>
         </div>
       )}
 
-      {/* Support tab */}
       {activeTab === 'support' && (
         <div className="flex flex-col gap-3 flex-1">
-          <p className="text-[9px] leading-relaxed" style={{ color: '#8888aa' }}>
-            Add to the prize pool. No profit for you — 100% goes to the winner.
-          </p>
-
+          <p className="text-[9px] leading-relaxed" style={{ color: '#8888aa' }}>Add to the prize pool. 100% goes to the winner.</p>
           <div className="grid grid-cols-2 gap-1.5">
             {SUPPORT_CHIPS.map(c => (
               <button key={c} onClick={() => handleSupport(c)}
                 className="py-2 text-[10px] font-bold transition-all hover:opacity-80"
                 style={{ background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.25)', color: '#FFD700' }}
-              >
-                {c} SOL
-              </button>
+              >{c} SOL</button>
             ))}
           </div>
-
-          <div
-            className="flex items-center overflow-hidden"
-            style={{ border: `1px solid ${supportError ? '#FF3B30' : '#2a2a3a'}`, background: '#0a0a0f' }}
-          >
+          <div className="flex items-center overflow-hidden" style={{ border: `1px solid ${supportError ? '#FF3B30' : '#2a2a3a'}`, background: '#0a0a0f' }}>
             <span className="pl-2 text-[10px]" style={{ color: '#8888aa' }}>SOL</span>
-            <input
-              type="number" min="0.01" step="0.01"
-              value={supportInput}
+            <input type="number" min="0.01" step="0.01" value={supportInput}
               onChange={e => { setSupportInput(e.target.value); setSupportError('') }}
               onKeyDown={e => e.key === 'Enter' && handleCustomSupport()}
               placeholder="0.01"
               className="flex-1 px-2 py-2 text-sm font-mono font-bold bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               style={{ color: '#FFD700' }}
             />
-            <button
-              onClick={handleCustomSupport}
-              className="px-3 py-2 text-[9px] font-bold"
-              style={{ background: 'rgba(255,215,0,0.15)', color: '#FFD700', borderLeft: '1px solid #2a2a3a' }}
-            >
-              Add
-            </button>
+            <button onClick={handleCustomSupport} className="px-3 py-2 text-[9px] font-bold"
+              style={{ background: 'rgba(255,215,0,0.15)', color: '#FFD700', borderLeft: '1px solid #2a2a3a' }}>Add</button>
           </div>
           {supportError && <p className="text-[9px]" style={{ color: '#FF3B30' }}>{supportError}</p>}
-
-			<div>
-				<DoubleButton offsetColor='random' className='w-full'>
-					Support
-				</DoubleButton>
-			</div>
-			
-
-
-          <p className="text-[9px] text-center" style={{ color: '#55556a' }}>
-            100% to prize pool · No fees
-          </p>
         </div>
       )}
     </div>
@@ -246,39 +321,80 @@ function LeftPanel({
 
 // ─── Player row ───────────────────────────────────────────────────────────────
 
-function PlayerRow({ player, color, timeSeconds, isActive }: {
-  player: Player; color: 'white' | 'black'; timeSeconds: number; isActive: boolean
+function PlayerRow({
+  player, wallet, color, timeSeconds, isActive, showTimer,
+}: {
+  player: Player | null
+  wallet: string | null
+  color: 'white' | 'black'
+  timeSeconds: number
+  isActive: boolean
+  showTimer: boolean
 }) {
+  const name = displayName(player, wallet)
+  const trust = player?.trustScore ?? '—'
   const isLow = timeSeconds < 30
+  const accentColor = color === 'white' ? '#14F195' : '#9945FF'
+
   return (
     <div
       className="flex items-center justify-between px-4 py-2 flex-shrink-0 transition-all duration-300"
       style={{
-        background: isActive ? (color === 'white' ? 'rgba(20,241,149,0.06)' : 'rgba(153,69,255,0.08)') : '#13131a',
-        border: `1.5px solid ${isActive ? (color === 'white' ? '#14F195' : '#9945FF') : '#2a2a3a'}`,
+        background: isActive ? `${accentColor}10` : '#13131a',
+        border: `1.5px solid ${isActive ? accentColor : '#2a2a3a'}`,
       }}
     >
       <div className="flex items-center gap-2">
-        <Avatar username={player.username} size="md" />
+        <Avatar username={name} size="md" />
         <div>
-          <p className="text-sm font-semibold text-white">{player.username}</p>
-          <p className="text-[10px]" style={{ color: '#8888aa' }}>Trust {player.trustScore}</p>
+          <p className="text-sm font-semibold text-white">{name}</p>
+          <p className="text-[10px]" style={{ color: '#8888aa' }}>Trust {trust}</p>
         </div>
         <span className="text-base">{color === 'white' ? '♔' : '♚'}</span>
       </div>
       <div className="flex items-center gap-2">
         {isActive && <LiveIndicator size="sm" showText={false} />}
-        <div
-          className="px-3 py-1 rounded-lg font-mono font-bold text-sm tabular-nums"
-          style={{
-            background: '#0a0a0f',
-            border: `1px solid ${isLow ? '#FF3B30' : isActive ? (color === 'white' ? '#14F195' : '#9945FF') : '#2a2a3a'}`,
-            color: isLow ? '#FF3B30' : isActive ? (color === 'white' ? '#14F195' : '#9945FF') : '#ffffff',
-          }}
-        >
-          {fmt(timeSeconds)}
-        </div>
+        {showTimer && (
+          <div
+            className="px-3 py-1 font-mono font-bold text-sm tabular-nums"
+            style={{
+              background: '#0a0a0f',
+              border: `1px solid ${isLow ? '#FF3B30' : isActive ? accentColor : '#2a2a3a'}`,
+              color: isLow ? '#FF3B30' : isActive ? accentColor : '#ffffff',
+            }}
+          >
+            {fmt(timeSeconds)}
+          </div>
+        )}
       </div>
+    </div>
+  )
+}
+
+// ─── Waiting room (practice friend only) ─────────────────────────────────────
+
+function WaitingRoom({ code, onCancel }: { code: string; onCancel: () => void }) {
+  const [copied, setCopied] = useState(false)
+  function copy() {
+    navigator.clipboard.writeText(code)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-6">
+      <div className="text-5xl">⏳</div>
+      <div className="text-center">
+        <h2 className="text-xl font-bold text-white mb-1">Waiting for opponent</h2>
+        <p className="text-sm" style={{ color: '#8888aa' }}>Share this code with your friend</p>
+      </div>
+      <div className="flex flex-col items-center gap-3 py-6 px-10" style={{ background: '#0a0a0f', border: '1.5px solid #2a2a3a' }}>
+        <span className="text-3xl font-mono font-bold tracking-widest" style={{ color: '#14F195', letterSpacing: '0.15em' }}>{code}</span>
+        <button onClick={copy} className="px-4 py-1.5 text-xs font-semibold transition-all"
+          style={{ background: copied ? 'rgba(20,241,149,0.15)' : 'transparent', border: `1px solid ${copied ? '#14F195' : '#2a2a3a'}`, color: copied ? '#14F195' : '#8888aa' }}>
+          {copied ? '✓ Copied!' : 'Copy Code'}
+        </button>
+      </div>
+      <button onClick={onCancel} className="text-xs" style={{ color: '#8888aa' }}>Cancel game</button>
     </div>
   )
 }
@@ -287,92 +403,427 @@ function PlayerRow({ player, color, timeSeconds, isActive }: {
 
 export default function GamePage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const { wallet } = useUserStore()
+  const { status } = useAuthStore()
+
+  const [game, setGame] = useState<GameData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Live timer state (seconds remaining per side)
+  const [timerWhite, setTimerWhite] = useState(0)
+  const [timerBlack, setTimerBlack] = useState(0)
+
+  // Practice-specific UI state
+  const [undoRequester, setUndoRequester] = useState<string | null>(null)
+  const [opponentDisconnected, setOpponentDisconnected] = useState(false)
+  const [bothConnected, setBothConnected] = useState(false)
+
   const { makeMove, board, moveHistory, currentTurn } = useChessGame()
-  const { setGame, setStatus, gameStatus, stakes, lastMove } = useGameStore()
+  const { setGame: storeSetGame, setStatus, setBoard, addMove, setWinner, resetGame, lastMove, winner, gameStatus } = useGameStore()
+
+  const gameRef = useRef<GameData | null>(null)
+  gameRef.current = game
+
+  // ── Derived ────────────────────────────────────────────────────────────────
+
+  const playerColor: 'white' | 'black' | null = !wallet ? null
+    : game?.whiteWallet === wallet ? 'white'
+    : game?.blackWallet === wallet ? 'black'
+    : null
+
+  const isMyTurn = playerColor !== null && gameStatus === 'active' && currentTurn() === playerColor
+  const isTimed = !!game?.timeControl
+  const isPractice = !!game?.isPractice
+  const isWaiting = game?.status === 'WAITING'
+
+  // ── Load game ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (id) { setGame(id, MOCK_WHITE, MOCK_BLACK); setStatus('active') }
-  }, [id, setGame, setStatus])
+    if (!id) return
+    setLoading(true)
+    api.get<GameData>(`/api/v1/games/${id}`)
+      .then(data => {
+        setGame(data)
+        if (data.timeControl) {
+          setTimerWhite(data.timeControl)
+          setTimerBlack(data.timeControl)
+        }
+        // Restore board state from server
+        resetGame()
+        setBoard(data.fen)
+        if (data.status === 'ACTIVE') setStatus('active')
+        if (data.status === 'ENDED' && data.winner) setWinner(data.winner as 'white' | 'black' | 'draw')
+        if (data.white && data.black) storeSetGame(data.id, data.white, data.black)
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Game not found'))
+      .finally(() => setLoading(false))
+  }, [id])
 
+  // ── Socket ─────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!id || status !== 'authenticated') return
+
+    socket.emit('join-game', { gameId: id })
+
+    socket.on('game-state', (data: GameData) => {
+      setGame(data)
+      setBoard(data.fen)
+      if (data.status === 'ACTIVE') setStatus('active')
+      if (data.status === 'ENDED' && data.winner) setWinner(data.winner as 'white' | 'black' | 'draw')
+      if (data.timeControl) {
+        setTimerWhite(data.timeControl)
+        setTimerBlack(data.timeControl)
+      }
+    })
+
+    socket.on('both-connected', () => {
+      setBothConnected(true)
+      setOpponentDisconnected(false)
+      setGame(prev => prev ? { ...prev, status: 'ACTIVE' } : prev)
+      setStatus('active')
+    })
+
+    socket.on('game-start', (data: GameData) => {
+      setGame(data)
+      setStatus('active')
+    })
+
+    socket.on('opponent-move', ({ move, fen, turn }: { move: { from: string; to: string; san: string; piece: string; color: 'w' | 'b' }; fen: string; turn: string }) => {
+      setBoard(fen)
+      addMove({ ...move, timestamp: Date.now() })
+      setOpponentDisconnected(false)
+      void turn
+    })
+
+    socket.on('timer-tick', ({ white, black }: { white: number; black: number }) => {
+      setTimerWhite(white)
+      setTimerBlack(black)
+    })
+
+    socket.on('game-end', ({ winner: w, reason }: { winner: string; reason: string }) => {
+      setWinner(w as 'white' | 'black' | 'draw')
+      setGame(prev => prev ? { ...prev, status: 'ENDED', winner: w, endReason: reason } : prev)
+    })
+
+    socket.on('undo-requested', ({ byWallet }: { byWallet: string }) => {
+      setUndoRequester(byWallet)
+      // Auto-clear after 16s (server auto-confirms at 15s)
+      setTimeout(() => setUndoRequester(null), 16_000)
+    })
+
+    socket.on('undo-confirmed', ({ fen, moveCount }: { fen: string; moveCount: number }) => {
+      setUndoRequester(null)
+      setBoard(fen)
+      // Trim move history to match
+      useGameStore.setState(state => ({
+        moveHistory: state.moveHistory.slice(0, moveCount),
+        lastMove: moveCount > 0
+          ? { from: state.moveHistory[moveCount - 1]?.from, to: state.moveHistory[moveCount - 1]?.to }
+          : null,
+        winner: null,
+        gameStatus: 'active',
+      }))
+    })
+
+    socket.on('undo-declined', () => {
+      setUndoRequester(null)
+    })
+
+    socket.on('opponent-disconnected', () => {
+      setOpponentDisconnected(true)
+      setBothConnected(false)
+    })
+
+    socket.on('error', ({ message }: { message: string }) => {
+      console.warn('Socket error:', message)
+    })
+
+    return () => {
+      socket.off('game-state')
+      socket.off('both-connected')
+      socket.off('game-start')
+      socket.off('opponent-move')
+      socket.off('timer-tick')
+      socket.off('game-end')
+      socket.off('undo-requested')
+      socket.off('undo-confirmed')
+      socket.off('undo-declined')
+      socket.off('opponent-disconnected')
+      socket.off('error')
+    }
+  }, [id, status])
+
+  // ── Actions ────────────────────────────────────────────────────────────────
+
+  const handleMove = useCallback((move: { from: string; to: string; promotion?: string }): boolean => {
+    if (!isMyTurn || !id) return false
+    const ok = makeMove(move)
+    if (ok) socket.emit('make-move', { gameId: id, ...move })
+    return ok
+  }, [isMyTurn, id, makeMove])
+
+  function handleResign() {
+    if (!id) return
+    socket.emit('resign', { gameId: id })
+  }
+
+  function handleRequestUndo() {
+    if (!id) return
+    socket.emit('request-undo', { gameId: id })
+  }
+
+  function handleRespondUndo(accept: boolean) {
+    if (!id) return
+    setUndoRequester(null)
+    socket.emit('respond-undo', { gameId: id, accept })
+  }
+
+  function handleEndPractice() {
+    if (!id) return
+    socket.emit('end-practice', { gameId: id })
+  }
+
+  function handleLeave() {
+    navigate(-1)
+  }
+
+  async function handleCancel() {
+    if (!id) return
+    try { await api.post(`/api/v1/games/${id}/cancel`) } catch { /* ignore */ }
+    navigate(-1)
+  }
+
+  // ── Render states ──────────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-sm" style={{ color: '#8888aa' }}>Loading game...</p>
+      </div>
+    )
+  }
+
+  if (error || !game) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4">
+        <p className="text-sm" style={{ color: '#FF3B30' }}>{error ?? 'Game not found'}</p>
+        <button onClick={() => navigate(-1)} className="text-xs" style={{ color: '#8888aa' }}>← Go back</button>
+      </div>
+    )
+  }
+
+  // ── Waiting room for practice friend games ─────────────────────────────────
+
+  if (isWaiting && isPractice) {
+    return (
+      <div className="flex flex-col h-[calc(100vh-140px)] px-4 py-4">
+        <WaitingRoom code={game.code} onCancel={handleCancel} />
+      </div>
+    )
+  }
+
+  // ── Waiting for opponent in public game ────────────────────────────────────
+
+  if (isWaiting && !isPractice) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4">
+        <div className="text-4xl">⏳</div>
+        <p className="text-lg font-bold text-white">Waiting for opponent</p>
+        <p className="text-sm font-mono" style={{ color: '#14F195' }}>{game.code}</p>
+        <p className="text-xs" style={{ color: '#8888aa' }}>Share this code or wait for someone to join</p>
+        <button onClick={() => navigate(-1)} className="text-xs mt-4" style={{ color: '#555577' }}>← Back to games</button>
+      </div>
+    )
+  }
+
+  // ── Board orientation & timing ─────────────────────────────────────────────
+
+  const orientation = playerColor ?? 'white'
+  const topColor: 'white' | 'black' = orientation === 'white' ? 'black' : 'white'
+  const bottomColor: 'white' | 'black' = orientation
+
+  const topWallet = topColor === 'white' ? game.whiteWallet : game.blackWallet
+  const bottomWallet = bottomColor === 'white' ? game.whiteWallet : game.blackWallet
+  const topPlayer = topColor === 'white' ? game.white : game.black
+  const bottomPlayer = bottomColor === 'white' ? game.white : game.black
+  const topTime = topColor === 'white' ? timerWhite : timerBlack
+  const bottomTime = bottomColor === 'white' ? timerWhite : timerBlack
+
+  // Timer only shows when timed AND (for practice) both players are connected
+  const showTimer = isTimed && (!isPractice || bothConnected || gameStatus === 'active')
   const turn = currentTurn()
-  const [supportPool, setSupportPool] = useState(0)
+  const isEnded = gameStatus === 'ended' || !!winner
 
-  function handleStake(side: 'white' | 'black', amount: number) {
-    useGameStore.getState().addStake(side, amount)
-  }
-
-  function handleSupport(amount: number) {
-    setSupportPool(p => parseFloat((p + amount).toFixed(2)))
-  }
-
-  const squareStyles: Record<string, React.CSSProperties> = lastMove ? {
-    [lastMove.from]: { background: 'rgba(255,215,0,0.25)' },
-    [lastMove.to]: { background: 'rgba(255,215,0,0.4)' },
-  } : {}
+  // Practice sidebar controls
+  const canUndo = isPractice && playerColor !== null && moveHistory.length >= 2 && !isEnded && !undoRequester
+  const isOwner = game.creatorColor === playerColor
 
   return (
     <div className="flex gap-3 px-4 py-3 h-[calc(100vh-140px)]">
 
-      {/* Left: stake + support */}
-      <div className="w-[200px] flex-shrink-0">
-        <LeftPanel
-          supportPool={supportPool}
-          stakesWhite={stakes.white}
-          stakesBlack={stakes.black}
-          onStake={handleStake}
-          onSupport={handleSupport}
-        />
+      {/* Left: stake panel (public) OR practice controls */}
+      <div className="w-[200px] flex-shrink-0 flex flex-col gap-2">
+        {!isPractice ? (
+          <LeftPanel
+            gameId={game.id}
+            supportPool={game.prizePool}
+            stakesWhite={game.stakesWhite}
+            stakesBlack={game.stakesBlack}
+          />
+        ) : (
+          <div className="flex flex-col gap-2 h-full">
+            {/* Game info */}
+            <div className="p-3 flex flex-col gap-2" style={{ background: '#13131a', border: '1.5px solid #2a2a3a' }}>
+              <p className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>Practice Game</p>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px]" style={{ color: '#555577' }}>Code:</span>
+                <span className="text-[10px] font-mono font-bold" style={{ color: '#14F195' }}>{game.code}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px]" style={{ color: '#555577' }}>Timer:</span>
+                <span className="text-[10px]" style={{ color: isTimed ? '#9945FF' : '#8888aa' }}>
+                  {isTimed ? `${Math.floor(game.timeControl! / 60)} min` : 'No timer'}
+                </span>
+              </div>
+              {!isTimed && (
+                <p className="text-[9px]" style={{ color: '#555577' }}>
+                  Playing at your own pace.
+                </p>
+              )}
+            </div>
+
+            {/* Move history */}
+            <div className="flex-1 overflow-hidden p-3" style={{ background: '#13131a', border: '1.5px solid #2a2a3a' }}>
+              <p className="text-[9px] font-semibold uppercase tracking-widest mb-2" style={{ color: '#8888aa' }}>Moves</p>
+              <MoveHistory moves={moveHistory} />
+            </div>
+
+            {/* Practice actions */}
+            {playerColor && !isEnded && (
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={handleRequestUndo}
+                  disabled={!canUndo}
+                  className="w-full py-2 text-xs font-semibold transition-all"
+                  style={{
+                    background: '#13131a',
+                    border: `1.5px solid ${canUndo ? '#9945FF' : '#2a2a3a'}`,
+                    color: canUndo ? '#9945FF' : '#444466',
+                    cursor: canUndo ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  ↩ Request Undo
+                </button>
+                {!isTimed && isOwner && (
+                  <button
+                    onClick={handleEndPractice}
+                    className="w-full py-2 text-xs font-semibold transition-all hover:opacity-80"
+                    style={{ background: '#13131a', border: '1.5px solid #FF8C42', color: '#FF8C42' }}
+                  >
+                    End Game
+                  </button>
+                )}
+                <button
+                  onClick={handleResign}
+                  className="w-full py-2 text-xs font-semibold transition-all hover:opacity-80"
+                  style={{ background: '#13131a', border: '1.5px solid #2a2a3a', color: '#8888aa' }}
+                >
+                  Resign
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Centre: board + player rows */}
+      {/* Centre: board + players + banners */}
       <div className="flex flex-col gap-2 flex-1 min-w-0">
-        <PlayerRow player={MOCK_BLACK} color="black" timeSeconds={300} isActive={turn === 'black' && gameStatus === 'active'} />
 
-        <div className="flex-1 flex items-center justify-center min-h-0">
-          <div
-            className="overflow-hidden"
-            style={{
-              border: '2px solid #2a2a3a',
-              width: 'min(100%, calc(100vh - 320px))',
-              height: 'min(100%, calc(100vh - 320px))',
-              aspectRatio: '1',
-            }}
-          >
-            <Chessboard
-              options={{
-                position: board,
-                boardOrientation: 'white',
-                onSquareClick: ({ square }) => {
-                  // handled internally via useChessGame via onMove
-                },
-                onPieceDrop: ({ sourceSquare, targetSquare }) =>
-                  makeMove({ from: sourceSquare, to: targetSquare, promotion: 'q' }),
-                allowDragging: turn === 'white' && gameStatus === 'active',
-                squareStyles,
-                darkSquareStyle: { backgroundColor: '#4a3728' },
-                lightSquareStyle: { backgroundColor: '#c8a97e' },
-                animationDurationInMs: 150,
-                boardStyle: { width: '100%', height: '100%' },
-              }}
+        {/* Disconnect banner */}
+        {opponentDisconnected && <DisconnectBanner isPractice={isPractice} isUntimed={!isTimed} />}
+
+        {/* Undo request banner */}
+        {undoRequester && undoRequester !== wallet && (
+          <UndoBanner
+            byWallet={undoRequester}
+            onAccept={() => handleRespondUndo(true)}
+            onDecline={() => handleRespondUndo(false)}
+          />
+        )}
+
+        <PlayerRow
+          player={topPlayer}
+          wallet={topWallet ?? null}
+          color={topColor}
+          timeSeconds={topTime}
+          isActive={gameStatus === 'active' && turn === topColor}
+          showTimer={showTimer}
+        />
+
+        <div className="flex-1 flex items-center justify-center min-h-0 relative overflow-hidden">
+          <div style={{ width: 'min(100%, calc(100vh - 300px))', aspectRatio: '1 / 1' }}>
+            <ChessBoard
+              position={board}
+              orientation={orientation}
+              onMove={handleMove}
+              disabled={!isMyTurn || !!winner}
+              lastMove={lastMove}
             />
           </div>
+          {(isEnded || !!winner) && game.winner && (
+            <WinnerOverlay
+              winner={game.winner ?? winner ?? ''}
+              reason={game.endReason}
+              playerColor={playerColor}
+              isPractice={isPractice}
+              onLeave={handleLeave}
+            />
+          )}
         </div>
 
-        <PlayerRow player={MOCK_WHITE} color="white" timeSeconds={300} isActive={turn === 'white' && gameStatus === 'active'} />
+        <PlayerRow
+          player={bottomPlayer}
+          wallet={bottomWallet ?? null}
+          color={bottomColor}
+          timeSeconds={bottomTime}
+          isActive={gameStatus === 'active' && turn === bottomColor}
+          showTimer={showTimer}
+        />
+
+        {/* Spectator count (public games) */}
+        {!isPractice && (
+          <div className="flex items-center justify-center gap-1.5 py-1">
+            <LiveIndicator size="sm" showText={false} />
+            <span className="text-[10px]" style={{ color: '#555577' }}>
+              {game.stakesWhite + game.stakesBlack > 0
+                ? `${(game.stakesWhite + game.stakesBlack).toFixed(2)} SOL staked`
+                : 'No stakes yet'}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Right: move history */}
-      <div
-        className="w-[180px] flex-shrink-0 flex flex-col overflow-hidden"
-        style={{ background: '#13131a', border: '1.5px solid #2a2a3a' }}
-      >
-        <div className="px-3 py-2 flex-shrink-0" style={{ borderBottom: '1px solid #2a2a3a' }}>
-          <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>Moves</p>
+      {/* Right: move history (public) OR resign/info (practice) */}
+      {!isPractice && (
+        <div className="w-[180px] flex-shrink-0 flex flex-col gap-2">
+          <div className="flex-1 overflow-hidden" style={{ background: '#13131a', border: '1.5px solid #2a2a3a' }}>
+            <div className="px-3 py-2 flex-shrink-0" style={{ borderBottom: '1px solid #2a2a3a' }}>
+              <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>Moves</p>
+            </div>
+            <div className="p-2">
+              <MoveHistory moves={moveHistory} />
+            </div>
+          </div>
+          {playerColor && !isEnded && (
+            <DoubleButton offsetColor="purple" size="sm" onClick={handleResign} className="w-full">
+              Resign
+            </DoubleButton>
+          )}
         </div>
-        <div className="flex-1 overflow-hidden p-2">
-          <MoveHistory moves={moveHistory} />
-        </div>
-      </div>
+      )}
 
     </div>
   )

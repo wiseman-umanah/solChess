@@ -88,7 +88,11 @@ export default function ChessBoard({
   }
 
   return (
-    <div className="w-full max-w-[560px] mx-auto" aria-label="Chess board">
+    <div
+      className="mx-auto overflow-hidden"
+      style={{ width: 'min(100%, 560px)', aspectRatio: '1 / 1' }}
+      aria-label="Chess board"
+    >
       <Chessboard
         options={{
           position,
@@ -100,6 +104,7 @@ export default function ChessBoard({
           lightSquareStyle: { backgroundColor: '#c8a97e' },
           allowDragging: !disabled,
           animationDurationInMs: 150,
+          boardStyle: { width: '100%', height: '100%' },
         }}
       />
     </div>

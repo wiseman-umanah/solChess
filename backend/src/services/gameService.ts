@@ -7,7 +7,7 @@ export async function broadcastGameList(io?: Server) {
   const emitter = io ?? getIo()
   if (!emitter) return
   const games = await prisma.game.findMany({
-    where: { status: { in: ['WAITING', 'ACTIVE'] } },
+    where: { status: { in: ['WAITING', 'ACTIVE'] }, isPractice: false },
     orderBy: { createdAt: 'desc' },
     take: 50,
     include: {
@@ -18,9 +18,10 @@ export async function broadcastGameList(io?: Server) {
   emitter.emit('game-list-update', games)
 }
 
-// In-memory timer state per game
+// ── Timer state ───────────────────────────────────────────────────────────────
+
 interface TimerState {
-  white: number   // seconds remaining
+  white: number
   black: number
   turn: 'w' | 'b'
   interval: ReturnType<typeof setInterval> | null
@@ -29,48 +30,136 @@ interface TimerState {
 
 const timers = new Map<string, TimerState>()
 
+// ── Connected-players tracking ────────────────────────────────────────────────
+// Maps gameId → Set of wallets currently in the socket room
+const connectedPlayers = new Map<string, Set<string>>()
+
+export function playerJoinedRoom(gameId: string, wallet: string) {
+  if (!connectedPlayers.has(gameId)) connectedPlayers.set(gameId, new Set())
+  connectedPlayers.get(gameId)!.add(wallet)
+}
+
+export function playerLeftRoom(gameId: string, wallet: string) {
+  connectedPlayers.get(gameId)?.delete(wallet)
+}
+
+export function getBothConnected(gameId: string, whiteWallet: string, blackWallet: string | null): boolean {
+  if (!blackWallet) return false
+  const room = connectedPlayers.get(gameId)
+  return !!(room?.has(whiteWallet) && room?.has(blackWallet))
+}
+
+// ── Code generation ───────────────────────────────────────────────────────────
+
 function randomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   return 'CHESS-' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
 }
 
-export async function createGame(whiteWallet: string, timeControl: number) {
+// ── Game CRUD ─────────────────────────────────────────────────────────────────
+
+export async function createGame(
+  wallet: string,
+  timeControl: number | null,
+  isPractice = false,
+  creatorColor: 'white' | 'black' = 'white',
+) {
   let code = randomCode()
   while (await prisma.game.findUnique({ where: { code } })) code = randomCode()
 
+  // Creator picks their color: if black, they are the black player and white slot waits
+  const whiteWallet = creatorColor === 'white' ? wallet : null as unknown as string
+  const blackWallet = creatorColor === 'black' ? wallet : null
+
   const game = await prisma.game.create({
-    data: { code, whiteWallet, timeControl },
-    include: { white: true },
+    data: {
+      code,
+      whiteWallet: whiteWallet,
+      blackWallet: blackWallet ?? undefined,
+      timeControl,
+      isPractice,
+      creatorColor,
+    },
+    include: { white: true, black: true },
   })
-  await broadcastGameList()
+
+  if (!isPractice) await broadcastGameList()
   return game
 }
 
-export async function joinGame(gameId: string, blackWallet: string) {
+export async function joinGame(gameId: string, joinerWallet: string) {
   const existing = await prisma.game.findUnique({ where: { id: gameId } })
   if (!existing) throw new Error('Game not found')
   if (existing.status !== 'WAITING') throw new Error('Game not available')
-  if (existing.whiteWallet === blackWallet) throw new Error('Cannot join your own game')
+  if (existing.whiteWallet === joinerWallet || existing.blackWallet === joinerWallet) {
+    throw new Error('Cannot join your own game')
+  }
 
+  // Fill whichever color slot is empty
+  const isWhiteEmpty = !existing.whiteWallet
   const game = await prisma.game.update({
     where: { id: gameId },
-    data: { blackWallet, status: 'ACTIVE' },
+    data: {
+      whiteWallet: isWhiteEmpty ? joinerWallet : existing.whiteWallet,
+      blackWallet: isWhiteEmpty ? existing.blackWallet : joinerWallet,
+      status: 'ACTIVE',
+    },
     include: { white: true, black: true },
   })
-  await broadcastGameList()
+
+  if (!existing.isPractice) await broadcastGameList()
   return game
 }
 
-export async function joinByCode(code: string, blackWallet: string) {
+export async function joinByCode(code: string, joinerWallet: string) {
   const game = await prisma.game.findUnique({ where: { code } })
   if (!game) throw new Error('Game not found')
-  return joinGame(game.id, blackWallet)
+  return joinGame(game.id, joinerWallet)
 }
 
+// ── Timers ────────────────────────────────────────────────────────────────────
+
 export function startTimer(gameId: string, timeControl: number, io: Server) {
-  const state: TimerState = { white: timeControl, black: timeControl, turn: 'w', interval: null, lastTick: Date.now() }
+  if (timers.has(gameId)) return // already running
+  const state: TimerState = {
+    white: timeControl,
+    black: timeControl,
+    turn: 'w',
+    interval: null,
+    lastTick: Date.now(),
+  }
   timers.set(gameId, state)
 
+  state.interval = setInterval(() => {
+    const now = Date.now()
+    const elapsed = (now - state.lastTick) / 1000
+    state.lastTick = now
+
+    if (state.turn === 'w') state.white = Math.max(0, state.white - elapsed)
+    else state.black = Math.max(0, state.black - elapsed)
+
+    io.to(gameId).emit('timer-tick', { white: Math.floor(state.white), black: Math.floor(state.black) })
+
+    if (state.white <= 0 || state.black <= 0) {
+      const loser = state.white <= 0 ? 'white' : 'black'
+      const winner = loser === 'white' ? 'black' : 'white'
+      stopTimer(gameId)
+      endGame(gameId, winner, 'timeout', io)
+    }
+  }, 1000)
+}
+
+export function pauseTimer(gameId: string) {
+  const state = timers.get(gameId)
+  if (!state || !state.interval) return
+  clearInterval(state.interval)
+  state.interval = null
+}
+
+export function resumeTimer(gameId: string, io: Server) {
+  const state = timers.get(gameId)
+  if (!state || state.interval) return
+  state.lastTick = Date.now()
   state.interval = setInterval(() => {
     const now = Date.now()
     const elapsed = (now - state.lastTick) / 1000
@@ -108,12 +197,14 @@ export function getTimer(gameId: string) {
   return timers.get(gameId)
 }
 
+// ── Move processing ───────────────────────────────────────────────────────────
+
 export async function processMove(
   gameId: string,
   wallet: string,
   from: string,
   to: string,
-  promotion: string = 'q',
+  promotion = 'q',
   io: Server,
 ) {
   const game = await prisma.game.findUnique({
@@ -126,7 +217,6 @@ export async function processMove(
   const chess = new Chess(game.fen)
   const turn = chess.turn()
 
-  // Validate it's the right player's turn
   const isWhite = game.whiteWallet === wallet
   const isBlack = game.blackWallet === wallet
   if (!isWhite && !isBlack) throw new Error('Not a player in this game')
@@ -138,7 +228,6 @@ export async function processMove(
 
   const newFen = chess.fen()
 
-  // Persist move + updated FEN
   await prisma.$transaction([
     prisma.move.create({
       data: { gameId, from, to, san: result.san, piece: result.piece, color: result.color },
@@ -146,22 +235,22 @@ export async function processMove(
     prisma.game.update({ where: { id: gameId }, data: { fen: newFen } }),
   ])
 
-  switchTimer(gameId)
+  if (game.timeControl) switchTimer(gameId)
 
   const moveData = { from, to, san: result.san, piece: result.piece, color: result.color }
 
   if (chess.isGameOver()) {
-    stopTimer(gameId)
+    if (game.timeControl) stopTimer(gameId)
     let winner: string
     let reason: string
     if (chess.isCheckmate()) {
-      winner = turn === 'w' ? 'white' : 'black' // the side that just moved wins
+      winner = turn === 'w' ? 'white' : 'black'
       reason = 'checkmate'
     } else {
       winner = 'draw'
-      reason = chess.isStalemate() ? 'stalemate' : chess.isDraw() ? 'draw' : 'draw'
+      reason = chess.isStalemate() ? 'stalemate' : 'draw'
     }
-    await endGame(gameId, winner, reason, io)
+    await endGame(gameId, winner, reason, io, game.isPractice)
     return { move: moveData, fen: newFen, gameOver: true, winner, reason }
   }
 
@@ -169,49 +258,78 @@ export async function processMove(
   return { move: moveData, fen: newFen, gameOver: false }
 }
 
-export async function endGame(gameId: string, winner: string, reason: string, io: Server) {
+// ── Undo (practice only) ──────────────────────────────────────────────────────
+
+export async function processUndo(gameId: string, io: Server) {
+  const game = await prisma.game.findUnique({
+    where: { id: gameId },
+    include: { moves: { orderBy: { timestamp: 'asc' } } },
+  })
+  if (!game || !game.isPractice) throw new Error('Undo not allowed')
+  if (game.status !== 'ACTIVE') throw new Error('Game is not active')
+
+  const moves = game.moves
+  if (moves.length < 2) throw new Error('Not enough moves to undo')
+
+  // Remove last 2 moves (both players' last ply)
+  const toRemove = moves.slice(-2).map((m) => m.id)
+  await prisma.move.deleteMany({ where: { id: { in: toRemove } } })
+
+  // Replay remaining moves from start to get correct FEN
+  const remaining = moves.slice(0, -2)
+  const chess = new Chess()
+  for (const m of remaining) chess.move({ from: m.from, to: m.to, promotion: 'q' })
+  const newFen = chess.fen()
+
+  await prisma.game.update({ where: { id: gameId }, data: { fen: newFen } })
+
+  io.to(gameId).emit('undo-confirmed', { fen: newFen, moveCount: remaining.length })
+  return newFen
+}
+
+// ── End game ──────────────────────────────────────────────────────────────────
+
+export async function endGame(
+  gameId: string,
+  winner: string,
+  reason: string,
+  io: Server,
+  isPractice = false,
+) {
   stopTimer(gameId)
   const game = await prisma.game.update({
     where: { id: gameId },
     data: { status: 'ENDED', winner, endReason: reason, endedAt: new Date() },
   })
-  await updateStats(game.whiteWallet, game.blackWallet, winner)
+  // Don't affect stats for practice games
+  if (!isPractice) await updateStats(game.whiteWallet, game.blackWallet, winner)
   io.to(gameId).emit('game-end', { winner, reason })
   return game
 }
 
 async function updateStats(whiteWallet: string, blackWallet: string | null, winner: string) {
   if (!blackWallet) return
-
   const whiteWon = winner === 'white'
   const blackWon = winner === 'black'
 
   await prisma.$transaction([
     prisma.userStats.upsert({
       where: { wallet: whiteWallet },
-      update: {
-        gamesPlayed: { increment: 1 },
-        gamesWon: { increment: whiteWon ? 1 : 0 },
-      },
+      update: { gamesPlayed: { increment: 1 }, gamesWon: { increment: whiteWon ? 1 : 0 } },
       create: { wallet: whiteWallet, gamesPlayed: 1, gamesWon: whiteWon ? 1 : 0 },
     }),
     prisma.userStats.upsert({
       where: { wallet: blackWallet },
-      update: {
-        gamesPlayed: { increment: 1 },
-        gamesWon: { increment: blackWon ? 1 : 0 },
-      },
+      update: { gamesPlayed: { increment: 1 }, gamesWon: { increment: blackWon ? 1 : 0 } },
       create: { wallet: blackWallet, gamesPlayed: 1, gamesWon: blackWon ? 1 : 0 },
     }),
   ])
 
-  // Recalculate win rates
   for (const wallet of [whiteWallet, blackWallet]) {
     const stats = await prisma.userStats.findUnique({ where: { wallet } })
     if (!stats) continue
     const winRate = stats.gamesPlayed > 0 ? (stats.gamesWon / stats.gamesPlayed) * 100 : 0
     await prisma.userStats.update({ where: { wallet }, data: { winRate } })
-    // Trust score = weighted blend of win rate + games played (capped at 99)
     const trustScore = Math.min(99, Math.floor(winRate * 0.6 + Math.min(stats.gamesPlayed, 200) * 0.2))
     await prisma.user.update({ where: { wallet }, data: { trustScore } })
   }

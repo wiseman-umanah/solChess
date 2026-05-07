@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Modal from '../ui/Modal'
+import { api } from '../../lib/apiClient'
 
 interface JoinModalProps {
   open: boolean
@@ -7,11 +9,12 @@ interface JoinModalProps {
 }
 
 export default function JoinModal({ open, onClose }: JoinModalProps) {
+  const navigate = useNavigate()
   const [code, setCode] = useState('')
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState('')
 
-  function handleJoin() {
+  async function handleJoin() {
     const clean = code.trim().toUpperCase()
     if (!clean) { setError('Enter a game code'); return }
     if (!clean.startsWith('CHESS-') || clean.length !== 12) {
@@ -20,7 +23,14 @@ export default function JoinModal({ open, onClose }: JoinModalProps) {
     }
     setError('')
     setJoining(true)
-    setTimeout(() => { setJoining(false); onClose() }, 1200)
+    try {
+      const game = await api.post<{ id: string }>('/api/v1/games/by-code/join', { code: clean })
+      onClose()
+      navigate(`/games/${game.id}`)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to join game')
+      setJoining(false)
+    }
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -29,8 +39,14 @@ export default function JoinModal({ open, onClose }: JoinModalProps) {
     setError('')
   }
 
+  function handleClose() {
+    setCode('')
+    setError('')
+    onClose()
+  }
+
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={handleClose}>
       <div className="flex items-center gap-3 pr-6">
         <div
           className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
@@ -40,7 +56,7 @@ export default function JoinModal({ open, onClose }: JoinModalProps) {
         </div>
         <div>
           <h2 className="text-lg font-bold text-white">Join Game</h2>
-          <p className="text-xs" style={{ color: '#8888aa' }}>Enter the code shared by your opponent</p>
+          <p className="text-xs" style={{ color: '#8888aa' }}>Works for public and private practice games</p>
         </div>
       </div>
 
@@ -55,6 +71,7 @@ export default function JoinModal({ open, onClose }: JoinModalProps) {
           placeholder="CHESS-XXXXXX"
           maxLength={12}
           aria-label="Game code"
+          autoFocus
           className="w-full px-4 py-3 font-mono text-base font-bold tracking-widest text-white outline-none transition-all"
           style={{
             background: '#0a0a0f',
@@ -66,10 +83,7 @@ export default function JoinModal({ open, onClose }: JoinModalProps) {
       </div>
 
       <div className="relative mt-1">
-        <div
-          className="absolute w-full h-full"
-          style={{ top: 4, left: 4, background: '#14F195' }}
-        />
+        <div className="absolute w-full h-full" style={{ top: 4, left: 4, background: '#14F195' }} />
         <button
           onClick={handleJoin}
           disabled={joining}

@@ -10,10 +10,11 @@ const gameInclude = {
 }
 
 export default async function gameRoutes(app: FastifyInstance) {
-  // List games
+  // List public games (never includes practice)
   app.get<{ Querystring: { status?: string; limit?: string; offset?: string } }>('/games', async (req) => {
     const { status, limit = '20', offset = '0' } = req.query
-    const where = status ? { status: status.toUpperCase() as 'WAITING' | 'ACTIVE' | 'ENDED' } : {}
+    const where: Record<string, unknown> = { isPractice: false }
+    if (status) where.status = status.toUpperCase()
     const games = await prisma.game.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -24,7 +25,23 @@ export default async function gameRoutes(app: FastifyInstance) {
     return games
   })
 
-  // Get single game
+  // My unfinished practice games (auth required)
+  app.get('/games/my-practice', { preHandler: requireAuth }, async (req) => {
+    const { wallet } = req.user as { wallet: string }
+    const games = await prisma.game.findMany({
+      where: {
+        isPractice: true,
+        status: { in: ['WAITING', 'ACTIVE'] },
+        winner: null,
+        OR: [{ whiteWallet: wallet }, { blackWallet: wallet }],
+      },
+      orderBy: { createdAt: 'desc' },
+      include: gameInclude,
+    })
+    return games
+  })
+
+  // Get single game (players only for practice)
   app.get<{ Params: { id: string } }>('/games/:id', async (req, reply) => {
     const game = await prisma.game.findUnique({ where: { id: req.params.id }, include: gameInclude })
     if (!game) return reply.status(404).send({ error: 'Game not found' })
@@ -32,16 +49,28 @@ export default async function gameRoutes(app: FastifyInstance) {
   })
 
   // Create game (auth required)
-  app.post<{ Body: { timeControl: number } }>(
+  app.post<{
+    Body: {
+      timeControl?: number | null
+      isPractice?: boolean
+      creatorColor?: 'white' | 'black'
+    }
+  }>(
     '/games',
     { preHandler: requireAuth },
     async (req, reply) => {
       const { wallet } = req.user as { wallet: string }
-      const { timeControl = 300 } = req.body
-      if (![60, 180, 300, 600, 1800].includes(timeControl)) {
+      const { timeControl = 300, isPractice = false, creatorColor = 'white' } = req.body
+
+      if (!isPractice && timeControl && ![60, 180, 300, 600, 1800].includes(timeControl)) {
         return reply.status(400).send({ error: 'Invalid time control' })
       }
-      const game = await createGame(wallet, timeControl)
+      if (!['white', 'black'].includes(creatorColor)) {
+        return reply.status(400).send({ error: 'Invalid color' })
+      }
+
+      const tc = timeControl === null || timeControl === 0 ? null : (timeControl ?? 300)
+      const game = await createGame(wallet, tc, isPractice, creatorColor)
       return { gameId: game.id, code: game.code, game }
     },
   )
@@ -63,7 +92,7 @@ export default async function gameRoutes(app: FastifyInstance) {
     },
   )
 
-  // Add stake (auth required)
+  // Add stake (auth required, public games only)
   app.post<{ Params: { id: string }; Body: { side: 'white' | 'black'; amount: number } }>(
     '/games/:id/stake',
     { preHandler: requireAuth },
@@ -74,7 +103,9 @@ export default async function gameRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Invalid stake' })
       }
       const game = await prisma.game.findUnique({ where: { id: req.params.id } })
-      if (!game || game.status === 'ENDED') return reply.status(400).send({ error: 'Game not available' })
+      if (!game || game.status === 'ENDED' || game.isPractice) {
+        return reply.status(400).send({ error: 'Game not available' })
+      }
 
       await prisma.stake.create({ data: { gameId: game.id, wallet, side, amount } })
       const updated = await prisma.game.update({
@@ -88,7 +119,7 @@ export default async function gameRoutes(app: FastifyInstance) {
     },
   )
 
-  // Add to prize pool / support (auth required)
+  // Support / prize pool (public games only)
   app.post<{ Params: { id: string }; Body: { amount: number } }>(
     '/games/:id/support',
     { preHandler: requireAuth },
@@ -97,7 +128,9 @@ export default async function gameRoutes(app: FastifyInstance) {
       const { amount } = req.body
       if (amount < 0.01) return reply.status(400).send({ error: 'Min 0.01 SOL' })
       const game = await prisma.game.findUnique({ where: { id: req.params.id } })
-      if (!game || game.status === 'ENDED') return reply.status(400).send({ error: 'Game not available' })
+      if (!game || game.status === 'ENDED' || game.isPractice) {
+        return reply.status(400).send({ error: 'Game not available' })
+      }
 
       await prisma.stake.create({ data: { gameId: game.id, wallet, side: 'support', amount } })
       const updated = await prisma.game.update({

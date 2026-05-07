@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import LiveIndicator from '../components/ui/LiveIndicator'
 import Avatar from '../components/ui/Avatar'
+import { api } from '../lib/apiClient'
+import { useAuthStore } from '../stores/authStore'
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -309,15 +311,85 @@ function GameCard({ game }: { game: GameListing }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-const FILTERS = ['All', 'Live', 'Waiting'] as const
+const FILTERS = ['All', 'Live', 'Waiting', 'My Practice'] as const
 type Filter = typeof FILTERS[number]
+
+interface PracticeGame {
+  id: string
+  code: string
+  status: string
+  timeControl: number | null
+  creatorColor: string
+  whiteWallet: string
+  blackWallet: string | null
+  white: { wallet: string; username: string | null } | null
+  black: { wallet: string; username: string | null } | null
+  moves: unknown[]
+}
+
+function PracticeGameCard({ game }: { game: PracticeGame }) {
+  const navigate = useNavigate()
+  const opponentColor = game.whiteWallet ? 'black' : 'white'
+  const opponent = opponentColor === 'black' ? game.black : game.white
+  const opponentName = opponent?.username ?? (opponent ? `${opponent.wallet.slice(0, 6)}…` : '—')
+  const isWaiting = game.status === 'WAITING'
+
+  return (
+    <div
+      className="flex items-center justify-between px-4 py-3 transition-all"
+      style={{ background: '#13131a', border: '1.5px solid #2a2a3a' }}
+    >
+      <div className="flex items-center gap-3">
+        <Avatar username={opponentName} size="sm" />
+        <div>
+          <p className="text-sm font-semibold text-white">{opponentName}</p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span
+              className="text-[10px] px-1.5 py-0.5 font-semibold"
+              style={{
+                background: isWaiting ? 'rgba(255,215,0,0.1)' : 'rgba(20,241,149,0.1)',
+                color: isWaiting ? '#FFD700' : '#14F195',
+                border: `1px solid ${isWaiting ? '#FFD700' : '#14F195'}`,
+              }}
+            >
+              {isWaiting ? 'Waiting' : 'In progress'}
+            </span>
+            <span className="text-[10px]" style={{ color: '#8888aa' }}>
+              {game.timeControl ? `${Math.floor(game.timeControl / 60)} min` : 'No timer'} · {game.moves.length} moves
+            </span>
+          </div>
+        </div>
+      </div>
+      <button
+        onClick={() => navigate(`/games/${game.id}`)}
+        className="px-3 py-1.5 text-xs font-bold transition-all hover:opacity-80"
+        style={{ background: 'rgba(153,69,255,0.12)', border: '1px solid #9945FF', color: '#9945FF' }}
+      >
+        Rejoin
+      </button>
+    </div>
+  )
+}
 
 export default function GamesPage() {
   const [filter, setFilter] = useState<Filter>('All')
+  const { status } = useAuthStore()
+  const [practiceGames, setPracticeGames] = useState<PracticeGame[]>([])
+  const [practiceLoading, setPracticeLoading] = useState(false)
+
+  useEffect(() => {
+    if (filter !== 'My Practice' || status !== 'authenticated') return
+    setPracticeLoading(true)
+    api.get<PracticeGame[]>('/api/v1/games/my-practice')
+      .then(setPracticeGames)
+      .catch(() => setPracticeGames([]))
+      .finally(() => setPracticeLoading(false))
+  }, [filter, status])
 
   const visible = MOCK_GAMES.filter(g => {
     if (filter === 'Live') return g.status === 'live'
     if (filter === 'Waiting') return g.status === 'waiting'
+    if (filter === 'My Practice') return false
     return true
   })
 
@@ -330,53 +402,82 @@ export default function GamesPage() {
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Live Games</h1>
+          <h1 className="text-2xl font-bold text-white">
+            {filter === 'My Practice' ? 'My Practice Games' : 'Live Games'}
+          </h1>
           <p className="text-xs mt-0.5" style={{ color: '#8888aa' }}>
-            Stake on outcomes · Earn SOL · All on-chain
+            {filter === 'My Practice'
+              ? 'Unfinished friend games — rejoin anytime'
+              : 'Stake on outcomes · Earn SOL · All on-chain'}
           </p>
         </div>
 
-        {/* Summary stats */}
-        <div className="flex items-center gap-5">
-          <div className="text-right">
-            <p className="text-[10px]" style={{ color: '#8888aa' }}>Total in pools</p>
-            <p className="text-lg font-bold" style={{ color: '#FFD700' }}>{totalPool.toFixed(2)} SOL</p>
-          </div>
-          <div className="text-right">
-            <p className="text-[10px]" style={{ color: '#8888aa' }}>Live games</p>
-            <div className="flex items-center justify-end gap-1.5">
-              <LiveIndicator size="sm" showText={false} />
-              <p className="text-lg font-bold text-white">{liveCount}</p>
+        {filter !== 'My Practice' && (
+          <div className="flex items-center gap-5">
+            <div className="text-right">
+              <p className="text-[10px]" style={{ color: '#8888aa' }}>Total in pools</p>
+              <p className="text-lg font-bold" style={{ color: '#FFD700' }}>{totalPool.toFixed(2)} SOL</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px]" style={{ color: '#8888aa' }}>Live games</p>
+              <div className="flex items-center justify-end gap-1.5">
+                <LiveIndicator size="sm" showText={false} />
+                <p className="text-lg font-bold text-white">{liveCount}</p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-2">
-        {FILTERS.map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className="px-4 py-1.5 text-xs font-semibold transition-all duration-150"
-            style={{
-              background: filter === f ? 'rgba(153,69,255,0.15)' : '#13131a',
-              border: `1px solid ${filter === f ? '#9945FF' : '#2a2a3a'}`,
-              color: filter === f ? '#9945FF' : '#8888aa',
-            }}
-          >
-            {f}
-            {f === 'Live' && (
-              <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full align-middle" style={{ background: '#14F195' }} />
-            )}
-          </button>
-        ))}
+      <div className="flex gap-2 flex-wrap">
+        {FILTERS.map(f => {
+          if (f === 'My Practice' && status !== 'authenticated') return null
+          return (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className="px-4 py-1.5 text-xs font-semibold transition-all duration-150"
+              style={{
+                background: filter === f ? 'rgba(153,69,255,0.15)' : '#13131a',
+                border: `1px solid ${filter === f ? '#9945FF' : '#2a2a3a'}`,
+                color: filter === f ? '#9945FF' : '#8888aa',
+              }}
+            >
+              {f}
+              {f === 'Live' && (
+                <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full align-middle" style={{ background: '#14F195' }} />
+              )}
+            </button>
+          )
+        })}
       </div>
 
-      {/* Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {visible.map(game => <GameCard key={game.id} game={game} />)}
-      </div>
+      {/* My Practice list */}
+      {filter === 'My Practice' && (
+        <div className="flex flex-col gap-3">
+          {practiceLoading ? (
+            <p className="text-sm" style={{ color: '#8888aa' }}>Loading...</p>
+          ) : practiceGames.length === 0 ? (
+            <div
+              className="py-12 flex flex-col items-center gap-2"
+              style={{ border: '1.5px dashed #2a2a3a' }}
+            >
+              <p className="text-sm" style={{ color: '#8888aa' }}>No unfinished practice games</p>
+              <p className="text-xs" style={{ color: '#444466' }}>Create one from the Practice page</p>
+            </div>
+          ) : (
+            practiceGames.map(g => <PracticeGameCard key={g.id} game={g} />)
+          )}
+        </div>
+      )}
+
+      {/* Public games grid */}
+      {filter !== 'My Practice' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {visible.map(game => <GameCard key={game.id} game={game} />)}
+        </div>
+      )}
 
     </div>
   )

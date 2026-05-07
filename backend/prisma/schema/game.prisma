@@ -5,7 +5,9 @@ model Game {
   blackWallet  String?
   fen          String      @default("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
   status       GameStatus  @default(WAITING)
-  timeControl  Int         // seconds per player
+  timeControl  Int?        // seconds per player; null = untimed
+  isPractice   Boolean     @default(false)
+  creatorColor String      @default("white") // 'white' | 'black'
   prizePool    Float       @default(0)
   stakesWhite  Float       @default(0)
   stakesBlack  Float       @default(0)

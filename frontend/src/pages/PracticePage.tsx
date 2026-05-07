@@ -4,10 +4,12 @@ import ChessBoard from '../components/chess/ChessBoard'
 import PlayerCard from '../components/chess/PlayerCard'
 import MoveHistory from '../components/chess/MoveHistory'
 import DoubleButton from '../components/ui/DoubleButton'
+import PracticeFriendModal from '../components/modals/PracticeFriendModal'
 import { useChessGame } from '../hooks/useChessGame'
 import { useGameStore } from '../stores/gameStore'
 import { useStockfish, type Difficulty } from '../hooks/useStockfish'
 import { useUserStore } from '../stores/userStore'
+import { useAuthStore } from '../stores/authStore'
 import type { Player } from '../types'
 
 const DIFFICULTIES: { label: Difficulty; desc: string; color: string }[] = [
@@ -43,79 +45,105 @@ interface SetupProps {
 function SetupScreen({ onStart }: SetupProps) {
   const [difficulty, setDifficulty] = useState<Difficulty>('Intermediate')
   const [color, setColor] = useState<'white' | 'black'>('white')
+  const [friendModalOpen, setFriendModalOpen] = useState(false)
+  const { status } = useAuthStore()
+  const isAuth = status === 'authenticated'
 
   return (
     <div className="flex flex-col items-center justify-center min-h-full py-12 px-4 gap-8">
       <div className="text-center">
-        <h1 className="text-3xl font-bold text-white mb-2">Practice vs AI</h1>
+        <h1 className="text-3xl font-bold text-white mb-2">Practice</h1>
         <p className="text-sm" style={{ color: '#8888aa' }}>
           No stakes, no leaderboard — just chess.
         </p>
       </div>
 
-      <div className="w-full max-w-sm flex flex-col gap-5">
-        {/* Difficulty */}
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>
-            Difficulty
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {DIFFICULTIES.map((d) => (
-              <button
-                key={d.label}
-                onClick={() => setDifficulty(d.label)}
-                className="flex flex-col items-start px-3 py-2.5 transition-all duration-150 text-left"
-                style={{
-                  background: difficulty === d.label ? `${d.color}14` : '#13131a',
-                  border: `1.5px solid ${difficulty === d.label ? d.color : '#2a2a3a'}`,
-                  boxShadow: difficulty === d.label ? `0 0 12px ${d.color}30` : 'none',
-                }}
-                aria-pressed={difficulty === d.label}
-              >
-                <span className="text-sm font-semibold" style={{ color: difficulty === d.label ? d.color : '#ffffff' }}>
-                  {d.label}
-                </span>
-                <span className="text-[10px]" style={{ color: '#8888aa' }}>{d.desc}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Color */}
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>
-            Play as
-          </p>
-          <div className="flex gap-2">
-            {COLORS.map((c) => (
-              <button
-                key={c.value}
-                onClick={() => setColor(c.value)}
-                className="flex-1 flex flex-col items-center py-3 transition-all duration-150"
-                style={{
-                  background: color === c.value ? 'rgba(153,69,255,0.12)' : '#13131a',
-                  border: `1.5px solid ${color === c.value ? '#9945FF' : '#2a2a3a'}`,
-                  boxShadow: color === c.value ? '0 0 12px rgba(153,69,255,0.25)' : 'none',
-                }}
-                aria-pressed={color === c.value}
-              >
-                <span className="text-base mb-0.5">{c.label}</span>
-                <span className="text-[9px]" style={{ color: '#8888aa' }}>{c.desc}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <DoubleButton
-          offsetColor="purple"
-          size="lg"
-          icon="♟"
-          onClick={() => onStart(difficulty, color)}
-          className="w-full"
+      <div className="w-full max-w-sm flex flex-col gap-6">
+        {/* AI section */}
+        <div
+          className="flex flex-col gap-4 p-4"
+          style={{ background: '#13131a', border: '1.5px solid #2a2a3a' }}
         >
-          Start Game
-        </DoubleButton>
+          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>
+            ⚙ vs AI
+          </p>
+
+          <div className="flex flex-col gap-2">
+            <p className="text-[10px] uppercase tracking-widest" style={{ color: '#555577' }}>Difficulty</p>
+            <div className="grid grid-cols-2 gap-2">
+              {DIFFICULTIES.map((d) => (
+                <button
+                  key={d.label}
+                  onClick={() => setDifficulty(d.label)}
+                  className="flex flex-col items-start px-3 py-2 transition-all duration-150 text-left"
+                  style={{
+                    background: difficulty === d.label ? `${d.color}14` : '#0a0a0f',
+                    border: `1.5px solid ${difficulty === d.label ? d.color : '#2a2a3a'}`,
+                    boxShadow: difficulty === d.label ? `0 0 12px ${d.color}30` : 'none',
+                  }}
+                  aria-pressed={difficulty === d.label}
+                >
+                  <span className="text-xs font-semibold" style={{ color: difficulty === d.label ? d.color : '#ffffff' }}>
+                    {d.label}
+                  </span>
+                  <span className="text-[10px]" style={{ color: '#8888aa' }}>{d.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <p className="text-[10px] uppercase tracking-widest" style={{ color: '#555577' }}>Play as</p>
+            <div className="flex gap-2">
+              {COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => setColor(c.value)}
+                  className="flex-1 flex flex-col items-center py-2.5 transition-all duration-150"
+                  style={{
+                    background: color === c.value ? 'rgba(153,69,255,0.12)' : '#0a0a0f',
+                    border: `1.5px solid ${color === c.value ? '#9945FF' : '#2a2a3a'}`,
+                    boxShadow: color === c.value ? '0 0 12px rgba(153,69,255,0.25)' : 'none',
+                  }}
+                  aria-pressed={color === c.value}
+                >
+                  <span className="text-sm mb-0.5">{c.label}</span>
+                  <span className="text-[9px]" style={{ color: '#8888aa' }}>{c.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <DoubleButton offsetColor="purple" size="md" icon="♟" onClick={() => onStart(difficulty, color)} className="w-full">
+            Start vs AI
+          </DoubleButton>
+        </div>
+
+        {/* Friend section */}
+        <div
+          className="flex flex-col gap-3 p-4"
+          style={{ background: '#13131a', border: '1.5px solid #2a2a3a' }}
+        >
+          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>
+            ♥ vs Friend
+          </p>
+          <p className="text-xs" style={{ color: '#555577' }}>
+            Private game with a friend using a shareable code. Timed or free play.
+          </p>
+          <DoubleButton
+            offsetColor="green"
+            size="md"
+            icon="♟"
+            onClick={() => setFriendModalOpen(true)}
+            className="w-full"
+            disabled={!isAuth}
+          >
+            {isAuth ? 'Create Friend Game' : 'Connect wallet to play'}
+          </DoubleButton>
+        </div>
       </div>
+
+      <PracticeFriendModal open={friendModalOpen} onClose={() => setFriendModalOpen(false)} />
     </div>
   )
 }
@@ -262,14 +290,16 @@ function PracticeGame({
           showTimer={false}
         />
 
-        <div className="relative flex-1 flex items-center justify-center min-h-0">
-          <ChessBoard
-            position={board}
-            orientation={playerColor}
-            onMove={handlePlayerMove}
-            disabled={!isPlayerTurn}
-            lastMove={lastMove}
-          />
+        <div className="relative flex-1 flex items-center justify-center min-h-0 overflow-hidden">
+          <div style={{ width: 'min(100%, calc(100vh - 300px))', aspectRatio: '1 / 1' }}>
+            <ChessBoard
+              position={board}
+              orientation={playerColor}
+              onMove={handlePlayerMove}
+              disabled={!isPlayerTurn}
+              lastMove={lastMove}
+            />
+          </div>
           {winner && (
             <WinnerOverlay
               winner={winner}
