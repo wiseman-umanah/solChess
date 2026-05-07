@@ -3,7 +3,7 @@ import DoubleButton from '../ui/DoubleButton'
 import type { OffsetColor } from '../../types'
 
 interface StakeButtonProps {
-  side: 'white' | 'black'
+  side: 'white' | 'black' | 'draw'
   onStake: (amount: number) => void
   offsetColor?: OffsetColor
 }
@@ -30,13 +30,13 @@ export default function StakeButton({ side, onStake, offsetColor }: StakeButtonP
   return (
     <div className="flex flex-col gap-2">
       <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>
-        Stake on {side === 'white' ? '♔ White' : '♚ Black'}
+        Stake on {side === 'white' ? '♔ White' : side === 'black' ? '♚ Black' : '🤝 Draw'}
       </p>
       <div className="flex flex-wrap gap-1.5">
         {PRESET_AMOUNTS.map((amount) => (
           <DoubleButton
             key={amount}
-            offsetColor={offsetColor ?? (side === 'white' ? 'green' : 'purple')}
+            offsetColor={offsetColor ?? (side === 'white' ? 'green' : side === 'black' ? 'purple' : 'green')}
             size="sm"
             onClick={() => handlePreset(amount)}
           >
