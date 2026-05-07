@@ -10,6 +10,7 @@ interface DoubleButtonProps {
   className?: string
   disabled?: boolean
   type?: 'button' | 'submit' | 'reset'
+  id?: string
 }
 
 function resolveColor(offsetColor: OffsetColor): string {
@@ -33,6 +34,7 @@ export default function DoubleButton({
   className = '',
   disabled = false,
   type = 'button',
+  id,
 }: DoubleButtonProps) {
   const color = useMemo(() => resolveColor(offsetColor), [offsetColor])
   const [pressed, setPressed] = useState(false)
@@ -42,7 +44,7 @@ export default function DoubleButton({
   const handleMouseLeave = () => setPressed(false)
 
   return (
-    <div className={`relative inline-block ${disabled ? 'opacity-50' : ''} ${className}`}>
+    <div id={id} className={`relative inline-block ${disabled ? 'opacity-50' : ''} ${className}`}>
       {/* Bottom offset layer */}
       <div
         className="absolute w-full h-full"

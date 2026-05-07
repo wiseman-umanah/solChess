@@ -1,14 +1,25 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import DoubleButton from '../ui/DoubleButton'
 import CreateModal from '../modals/CreateModal'
 import JoinModal from '../modals/JoinModal'
 import PracticeAIModal from '../modals/PracticeAIModal'
 import PracticeFriendModal from '../modals/PracticeFriendModal'
+import { useAuthStore } from '../../stores/authStore'
 
 type ModalState = 'create' | 'join' | 'host' | 'practiceAI' | 'friend' | null
 
 export default function ActionBar() {
   const [modal, setModal] = useState<ModalState>(null)
+  const navigate = useNavigate()
+  const { setVisible } = useWalletModal()
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated())
+
+  function requireAuth(action: () => void) {
+    if (!isAuthenticated) { setVisible(true); return }
+    action()
+  }
 
   return (
     <>
@@ -22,12 +33,12 @@ export default function ActionBar() {
         role="toolbar"
         aria-label="Game actions"
       >
-        <DoubleButton offsetColor="purple" size="sm" icon={<span>♟</span>} onClick={() => setModal('create')}>Create</DoubleButton>
-        <DoubleButton offsetColor="green"  size="sm" icon={<span>→</span>}  onClick={() => setModal('join')}>Join</DoubleButton>
-        <DoubleButton offsetColor="purple" size="sm" icon={<span>⬡</span>}  onClick={() => setModal('host')}>Host</DoubleButton>
-        <DoubleButton offsetColor="green"  size="sm" icon={<span>◈</span>}  onClick={() => {}}>Puzzles</DoubleButton>
-        <DoubleButton offsetColor="purple" size="sm" icon={<span>⚙</span>}  onClick={() => setModal('practiceAI')}>Practice (AI)</DoubleButton>
-        <DoubleButton offsetColor="green"  size="sm" icon={<span>♥</span>}  onClick={() => setModal('friend')}>Practice (Friend)</DoubleButton>
+        <DoubleButton id="tour-create-btn"         offsetColor="purple" size="sm" icon={<span>♟</span>} onClick={() => requireAuth(() => setModal('create'))}>Create</DoubleButton>
+        <DoubleButton id="tour-join-btn"           offsetColor="green"  size="sm" icon={<span>→</span>}  onClick={() => requireAuth(() => setModal('join'))}>Join</DoubleButton>
+        <DoubleButton id="tour-host-btn"           offsetColor="purple" size="sm" icon={<span>⬡</span>}  onClick={() => requireAuth(() => setModal('host'))}>Host</DoubleButton>
+        <DoubleButton id="tour-puzzles-btn"        offsetColor="green"  size="sm" icon={<span>◈</span>}  onClick={() => navigate('/puzzles')}>Puzzles</DoubleButton>
+        <DoubleButton id="tour-practice-ai-btn"    offsetColor="purple" size="sm" icon={<span>⚙</span>}  onClick={() => setModal('practiceAI')}>Practice (AI)</DoubleButton>
+        <DoubleButton id="tour-practice-friend-btn" offsetColor="green"  size="sm" icon={<span>♥</span>}  onClick={() => requireAuth(() => setModal('friend'))}>Practice (Friend)</DoubleButton>
       </div>
 
       <CreateModal

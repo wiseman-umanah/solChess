@@ -60,7 +60,9 @@ export function registerSocketHandlers(io: Server) {
 
       // Timer + both-connected (practice games, timed or untimed)
       if (game.isPractice && game.status === 'ACTIVE') {
-        const bothHere = getBothConnected(gameId, game.whiteWallet, game.blackWallet)
+        const bothHere = game.whiteWallet
+          ? getBothConnected(gameId, game.whiteWallet, game.blackWallet)
+          : false
         if (bothHere) {
           if (game.timeControl) {
             if (!getTimer(gameId)) startTimer(gameId, game.timeControl, io)
@@ -70,9 +72,9 @@ export function registerSocketHandlers(io: Server) {
         }
       }
 
-      // Regular games: emit game-start when ACTIVE
-      if (!game.isPractice && game.status === 'ACTIVE' && !getTimer(gameId) && game.timeControl) {
-        startTimer(gameId, game.timeControl, io)
+      // Regular games: notify room when ACTIVE (also starts timer if timed)
+      if (!game.isPractice && game.status === 'ACTIVE') {
+        if (game.timeControl && !getTimer(gameId)) startTimer(gameId, game.timeControl, io)
         io.to(gameId).emit('game-start', game)
       }
 

@@ -63,22 +63,27 @@ export async function createGame(
   timeControl: number | null,
   isPractice = false,
   creatorColor: 'white' | 'black' = 'white',
+  isHosted = false,
 ) {
   let code = randomCode()
   while (await prisma.game.findUnique({ where: { code } })) code = randomCode()
 
-  // Creator picks their color: if black, they are the black player and white slot waits
-  const whiteWallet = creatorColor === 'white' ? wallet : null as unknown as string
-  const blackWallet = creatorColor === 'black' ? wallet : null
+  // Hosted: host is spectator-only, both player slots are empty
+  // Regular/Practice: creator occupies their chosen color slot
+  const whiteWallet = isHosted ? null : (creatorColor === 'white' ? wallet : null)
+  const blackWallet = isHosted ? null : (creatorColor === 'black' ? wallet : null)
+  const hostWallet  = isHosted ? wallet : null
 
   const game = await prisma.game.create({
     data: {
       code,
-      whiteWallet: whiteWallet,
+      whiteWallet,
       blackWallet: blackWallet ?? undefined,
       timeControl,
       isPractice,
-      creatorColor,
+      isHosted,
+      hostWallet,
+      creatorColor: isHosted ? 'host' : creatorColor,
     },
     include: { white: true, black: true },
   })
@@ -92,17 +97,24 @@ export async function joinGame(gameId: string, joinerWallet: string) {
   if (!existing) throw new Error('Game not found')
   if (existing.status !== 'WAITING') throw new Error('Game not available')
   if (existing.whiteWallet === joinerWallet || existing.blackWallet === joinerWallet) {
-    throw new Error('Cannot join your own game')
+    throw new Error('Already in this game')
+  }
+  if (existing.isHosted && existing.hostWallet === joinerWallet) {
+    throw new Error('Host cannot join as a player')
   }
 
-  // Fill whichever color slot is empty
+  // Fill first empty slot; only go ACTIVE once both players are present
   const isWhiteEmpty = !existing.whiteWallet
+  const newWhite = isWhiteEmpty ? joinerWallet : existing.whiteWallet
+  const newBlack = isWhiteEmpty ? existing.blackWallet : joinerWallet
+  const newStatus = newWhite && newBlack ? 'ACTIVE' : 'WAITING'
+
   const game = await prisma.game.update({
     where: { id: gameId },
     data: {
-      whiteWallet: isWhiteEmpty ? joinerWallet : existing.whiteWallet,
-      blackWallet: isWhiteEmpty ? existing.blackWallet : joinerWallet,
-      status: 'ACTIVE',
+      whiteWallet: newWhite,
+      blackWallet: newBlack ?? undefined,
+      status: newStatus,
     },
     include: { white: true, black: true },
   })
@@ -307,8 +319,8 @@ export async function endGame(
   return game
 }
 
-async function updateStats(whiteWallet: string, blackWallet: string | null, winner: string) {
-  if (!blackWallet) return
+async function updateStats(whiteWallet: string | null, blackWallet: string | null, winner: string) {
+  if (!whiteWallet || !blackWallet) return
   const whiteWon = winner === 'white'
   const blackWon = winner === 'black'
 

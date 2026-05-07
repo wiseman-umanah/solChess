@@ -53,6 +53,7 @@ export default async function gameRoutes(app: FastifyInstance) {
     Body: {
       timeControl?: number | null
       isPractice?: boolean
+      isHosted?: boolean
       creatorColor?: 'white' | 'black'
     }
   }>(
@@ -60,17 +61,14 @@ export default async function gameRoutes(app: FastifyInstance) {
     { preHandler: requireAuth },
     async (req, reply) => {
       const { wallet } = req.user as { wallet: string }
-      const { timeControl = 300, isPractice = false, creatorColor = 'white' } = req.body
+      const { timeControl = 300, isPractice = false, isHosted = false, creatorColor = 'white' } = req.body
 
-      if (!isPractice && timeControl && ![60, 180, 300, 600, 1800].includes(timeControl)) {
-        return reply.status(400).send({ error: 'Invalid time control' })
-      }
-      if (!['white', 'black'].includes(creatorColor)) {
+      if (!isHosted && !isPractice && creatorColor && !['white', 'black'].includes(creatorColor)) {
         return reply.status(400).send({ error: 'Invalid color' })
       }
 
       const tc = timeControl === null || timeControl === 0 ? null : (timeControl ?? 300)
-      const game = await createGame(wallet, tc, isPractice, creatorColor)
+      const game = await createGame(wallet, tc, isPractice, creatorColor, isHosted)
       return { gameId: game.id, code: game.code, game }
     },
   )

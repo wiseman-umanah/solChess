@@ -73,9 +73,11 @@ export default function Header() {
 
         {NAV_LINKS.map((link) => {
           const active = pathname === link.path
+          const tourId = link.label === 'Games' ? 'tour-nav-games' : link.label === 'Leaderboard' ? 'tour-nav-leaderboard' : undefined
           return (
             <Link
               key={link.path}
+              id={tourId}
               to={link.path}
               className="text-sm font-medium transition-colors"
               style={{ color: active ? '#ffffff' : '#8888aa' }}
@@ -96,7 +98,9 @@ export default function Header() {
       </nav>
 
       {/* Wallet */}
-      <ConnectButton />
+      <div id="tour-connect-wallet">
+        <ConnectButton />
+      </div>
     </header>
   )
 }

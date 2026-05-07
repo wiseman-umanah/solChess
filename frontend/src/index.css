@@ -57,3 +57,42 @@ body {
 .animate-slide-in {
   animation: slide-in-bottom 0.2s ease-out;
 }
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-10px); }
+}
+
+@keyframes ring-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes ring-spin-reverse {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+@keyframes particle-drift {
+  0%, 100% { transform: translateY(0px) rotate(0deg);  opacity: 0.12; }
+  50%       { transform: translateY(-18px) rotate(8deg); opacity: 0.30; }
+}
+
+@keyframes progress-auto {
+  0%   { width: 0%;  }
+  30%  { width: 45%; }
+  60%  { width: 70%; }
+  85%  { width: 84%; }
+  100% { width: 90%; }
+}
+
+.animate-float        { animation: float         2.6s ease-in-out infinite; }
+.animate-ring-spin    { animation: ring-spin      2.8s linear    infinite; }
+.animate-ring-reverse { animation: ring-spin-reverse 4s linear   infinite; }
+.animate-shimmer      { animation: shimmer        1.6s linear    infinite; }
+.animate-progress-auto { animation: progress-auto 1.8s cubic-bezier(0.4,0,0.6,1) forwards; }

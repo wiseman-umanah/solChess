@@ -7,7 +7,6 @@ import Avatar from '../components/ui/Avatar'
 import DoubleButton from '../components/ui/DoubleButton'
 import { useChessGame } from '../hooks/useChessGame'
 import { useGameStore } from '../stores/gameStore'
-import { useAuthStore } from '../stores/authStore'
 import { useUserStore } from '../stores/userStore'
 import { api } from '../lib/apiClient'
 import { socket } from '../lib/socket'
@@ -18,12 +17,14 @@ import type { Player } from '../types'
 interface GameData {
   id: string
   code: string
-  whiteWallet: string
+  whiteWallet: string | null
   blackWallet: string | null
   fen: string
   status: 'WAITING' | 'ACTIVE' | 'ENDED'
   timeControl: number | null
   isPractice: boolean
+  isHosted: boolean
+  hostWallet: string | null
   creatorColor: string
   prizePool: number
   stakesWhite: number
@@ -399,13 +400,114 @@ function WaitingRoom({ code, onCancel }: { code: string; onCancel: () => void })
   )
 }
 
+// ─── Waiting room (public game) ───────────────────────────────────────────────
+
+function PublicWaitingRoom({
+  code,
+  gameId,
+  isHosted = false,
+  onBack,
+}: {
+  code: string | null
+  gameId: string
+  isHosted?: boolean
+  onBack: () => void
+}) {
+  const [codeCopied, setCodeCopied] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
+
+  function copyCode() {
+    if (!code) return
+    navigator.clipboard.writeText(code)
+    setCodeCopied(true)
+    setTimeout(() => setCodeCopied(false), 2000)
+  }
+
+  function copyLink() {
+    navigator.clipboard.writeText(`${window.location.origin}/games/${gameId}`)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2000)
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-6">
+      <div className="text-5xl">⏳</div>
+      <div className="text-center">
+        <h2 className="text-xl font-bold text-white mb-1">
+          {isHosted ? 'Waiting for players' : 'Waiting for opponent'}
+        </h2>
+        <p className="text-sm" style={{ color: '#8888aa' }}>
+          {isHosted
+            ? (code ? 'Share the code with both players' : 'The game will start once both players have joined')
+            : (code ? 'Share the code with your opponent' : 'The game will start once both players have joined')}
+        </p>
+      </div>
+
+      {code && (
+        <div
+          className="flex flex-col items-center gap-3 py-5 px-10"
+          style={{ background: '#0a0a0f', border: '1.5px solid #2a2a3a' }}
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#555577' }}>
+            {isHosted ? 'Player Code' : 'Opponent Code'}
+          </p>
+          <span
+            className="text-3xl font-mono font-bold tracking-widest"
+            style={{ color: '#9945FF', letterSpacing: '0.15em' }}
+          >
+            {code}
+          </span>
+          {isHosted && (
+            <p className="text-[10px] text-center" style={{ color: '#8888aa' }}>
+              First to join = white · Second to join = black
+            </p>
+          )}
+          <button
+            onClick={copyCode}
+            className="px-4 py-1.5 text-xs font-semibold transition-all"
+            style={{
+              background: codeCopied ? 'rgba(153,69,255,0.15)' : 'transparent',
+              border: `1px solid ${codeCopied ? '#9945FF' : '#2a2a3a'}`,
+              color: codeCopied ? '#9945FF' : '#8888aa',
+            }}
+          >
+            {codeCopied ? '✓ Copied!' : 'Copy Code'}
+          </button>
+        </div>
+      )}
+
+      {/* Spectator share link — always visible */}
+      <button
+        onClick={copyLink}
+        className="flex items-center gap-2 px-4 py-2 text-xs font-semibold transition-all"
+        style={{
+          background: linkCopied ? 'rgba(20,241,149,0.1)' : '#13131a',
+          border: `1px solid ${linkCopied ? '#14F195' : '#2a2a3a'}`,
+          color: linkCopied ? '#14F195' : '#8888aa',
+        }}
+      >
+        <span>🔗</span>
+        {linkCopied ? 'Spectator link copied!' : 'Copy spectator link'}
+      </button>
+
+      {code && !isHosted && (
+        <p className="text-xs text-center max-w-xs" style={{ color: '#444466' }}>
+          Only the first person to join by code becomes your opponent. Anyone with the link can spectate.
+        </p>
+      )}
+
+      <button onClick={onBack} className="text-xs mt-2" style={{ color: '#555577' }}>← Back to games</button>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function GamePage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { wallet } = useUserStore()
-  const { status } = useAuthStore()
+
 
   const [game, setGame] = useState<GameData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -425,6 +527,9 @@ export default function GamePage() {
 
   const gameRef = useRef<GameData | null>(null)
   gameRef.current = game
+
+  // Tracks the move we sent locally so we can skip the echo from opponent-move
+  const pendingMoveRef = useRef<{ from: string; to: string } | null>(null)
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -450,12 +555,13 @@ export default function GamePage() {
           setTimerWhite(data.timeControl)
           setTimerBlack(data.timeControl)
         }
-        // Restore board state from server
+        // Restore board state from server.
+        // storeSetGame resets gameStatus → 'waiting', so call it FIRST then override.
         resetGame()
+        if (data.white && data.black) storeSetGame(data.id, data.white, data.black)
         setBoard(data.fen)
         if (data.status === 'ACTIVE') setStatus('active')
         if (data.status === 'ENDED' && data.winner) setWinner(data.winner as 'white' | 'black' | 'draw')
-        if (data.white && data.black) storeSetGame(data.id, data.white, data.black)
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Game not found'))
       .finally(() => setLoading(false))
@@ -464,9 +570,15 @@ export default function GamePage() {
   // ── Socket ─────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!id || status !== 'authenticated') return
+    if (!id) return
 
-    socket.emit('join-game', { gameId: id })
+    // Connect for spectators (authenticated users reconnect via useSocketLifecycle)
+    if (!socket.connected) socket.connect()
+
+    const joinGame = () => socket.emit('join-game', { gameId: id })
+    joinGame()
+    // Re-join on reconnect (e.g. user authenticates while on the page)
+    socket.on('connect', joinGame)
 
     socket.on('game-state', (data: GameData) => {
       setGame(data)
@@ -493,7 +605,13 @@ export default function GamePage() {
 
     socket.on('opponent-move', ({ move, fen, turn }: { move: { from: string; to: string; san: string; piece: string; color: 'w' | 'b' }; fen: string; turn: string }) => {
       setBoard(fen)
-      addMove({ ...move, timestamp: Date.now() })
+      // Skip duplicate if this is our own move echoed back from the server
+      const pending = pendingMoveRef.current
+      if (pending && pending.from === move.from && pending.to === move.to) {
+        pendingMoveRef.current = null
+      } else {
+        addMove({ ...move, timestamp: Date.now() })
+      }
       setOpponentDisconnected(false)
       void turn
     })
@@ -542,6 +660,7 @@ export default function GamePage() {
     })
 
     return () => {
+      socket.off('connect', joinGame)
       socket.off('game-state')
       socket.off('both-connected')
       socket.off('game-start')
@@ -554,14 +673,17 @@ export default function GamePage() {
       socket.off('opponent-disconnected')
       socket.off('error')
     }
-  }, [id, status])
+  }, [id])
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
   const handleMove = useCallback((move: { from: string; to: string; promotion?: string }): boolean => {
     if (!isMyTurn || !id) return false
     const ok = makeMove(move)
-    if (ok) socket.emit('make-move', { gameId: id, ...move })
+    if (ok) {
+      pendingMoveRef.current = { from: move.from, to: move.to }
+      socket.emit('make-move', { gameId: id, ...move })
+    }
     return ok
   }, [isMyTurn, id, makeMove])
 
@@ -628,14 +750,15 @@ export default function GamePage() {
   // ── Waiting for opponent in public game ────────────────────────────────────
 
   if (isWaiting && !isPractice) {
+    // Players in a slot, or the host who created the game, can see the code
+    const canSeeCode = playerColor !== null || (!!game.hostWallet && game.hostWallet === wallet)
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4">
-        <div className="text-4xl">⏳</div>
-        <p className="text-lg font-bold text-white">Waiting for opponent</p>
-        <p className="text-sm font-mono" style={{ color: '#14F195' }}>{game.code}</p>
-        <p className="text-xs" style={{ color: '#8888aa' }}>Share this code or wait for someone to join</p>
-        <button onClick={() => navigate(-1)} className="text-xs mt-4" style={{ color: '#555577' }}>← Back to games</button>
-      </div>
+      <PublicWaitingRoom
+        code={canSeeCode ? game.code : null}
+        gameId={game.id}
+        isHosted={game.isHosted}
+        onBack={() => navigate(-1)}
+      />
     )
   }
 

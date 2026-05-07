@@ -3,6 +3,7 @@ import Header from './Header'
 import LeftSidebar from './LeftSideBar'
 import RightSidebar from './RightSideBar'
 import ActionBar from './ActionBar'
+import AppTour from '../ui/AppTour'
 import { useSocketLifecycle } from '../../hooks/useSocket'
 
 interface AppLayoutProps {
@@ -40,6 +41,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       />
 
       <ActionBar />
+      <AppTour />
     </div>
   )
 }

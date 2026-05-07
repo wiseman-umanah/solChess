@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from 'react'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import ChatMessage from './ChatMessage'
 import { api } from '../../lib/apiClient'
 import { socket } from '../../lib/socket'
@@ -32,8 +33,9 @@ export default function WorldChat({ onClickUser }: WorldChatProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
-  const { wallet, username } = useUserStore()
+  const { wallet } = useUserStore()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated())
+  const { setVisible } = useWalletModal()
 
   // Load history on mount
   useEffect(() => {
@@ -58,7 +60,11 @@ export default function WorldChat({ onClickUser }: WorldChatProps) {
 
   function handleSend() {
     const text = input.trim()
-    if (!text || !isAuthenticated) return
+    if (!text) return
+    if (!isAuthenticated) {
+      setVisible(true)
+      return
+    }
     socket.emit('world-chat', { content: text })
     setInput('')
   }
@@ -86,16 +92,15 @@ export default function WorldChat({ onClickUser }: WorldChatProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder={isAuthenticated ? 'Say something...' : 'Connect wallet to chat'}
+          placeholder={isAuthenticated ? 'Say something...' : 'Type to chat…'}
           maxLength={500}
-          disabled={!isAuthenticated}
           aria-label="Chat message"
           className="flex-1 rounded-lg px-3 py-1.5 text-xs outline-none focus:ring-1 transition-all disabled:opacity-40"
           style={{ background: '#0a0a0f', border: '1px solid #2a2a3a', color: '#ffffff' }}
         />
         <button
           onClick={handleSend}
-          disabled={!isAuthenticated || !input.trim()}
+          disabled={!input.trim()}
           aria-label="Send message"
           className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
           style={{ background: '#9945FF', color: '#ffffff' }}

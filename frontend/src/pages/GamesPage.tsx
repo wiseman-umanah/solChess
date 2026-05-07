@@ -2,94 +2,49 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import LiveIndicator from '../components/ui/LiveIndicator'
 import Avatar from '../components/ui/Avatar'
+import { SkeletonGameCard } from '../components/ui/Skeleton'
 import { api } from '../lib/apiClient'
+import { socket } from '../lib/socket'
 import { useAuthStore } from '../stores/authStore'
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+// ─── API types ────────────────────────────────────────────────────────────────
 
-interface GameListing {
-  id: string
-  white: { name: string; trustScore: number }
-  black: { name: string; trustScore: number }
-  prizePool: number
-  stakeWhite: number
-  stakeBlack: number
-  // pool growth over last ~10 snapshots (SOL values)
-  poolHistory: number[]
-  // stake history per side over same snapshots
-  whiteHistory: number[]
-  blackHistory: number[]
-  spectators: number
-  timeControl: number | null // null = no time limit
-  status: 'waiting' | 'live'
-  move: number
+interface ApiPlayer {
+  wallet: string
+  username: string | null
+  trustScore: number
 }
 
-const MOCK_GAMES: GameListing[] = [
-  {
-    id: '1', status: 'live', move: 24,
-    white: { name: 'GrandmasterX', trustScore: 98 },
-    black: { name: 'SolKnight', trustScore: 95 },
-    prizePool: 5.0, stakeWhite: 3.2, stakeBlack: 1.8,
-    poolHistory: [0.5, 1.0, 1.5, 2.0, 2.8, 3.2, 3.8, 4.2, 4.7, 5.0],
-    whiteHistory: [0.3, 0.6, 0.9, 1.2, 1.8, 2.0, 2.4, 2.7, 3.0, 3.2],
-    blackHistory: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.5, 1.7, 1.8],
-    spectators: 143, timeControl: 10,
-  },
-  {
-    id: '2', status: 'live', move: 9,
-    white: { name: 'ChainPawn', trustScore: 82 },
-    black: { name: 'BlockRook', trustScore: 77 },
-    prizePool: 1.0, stakeWhite: 0.5, stakeBlack: 0.5,
-    poolHistory: [0.1, 0.2, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0],
-    whiteHistory: [0.05, 0.1, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.48, 0.5],
-    blackHistory: [0.05, 0.1, 0.1, 0.25, 0.3, 0.35, 0.4, 0.45, 0.47, 0.5],
-    spectators: 12, timeControl: 3,
-  },
-  {
-    id: '3', status: 'live', move: 41,
-    white: { name: 'ZeroLatency', trustScore: 91 },
-    black: { name: 'CryptoKing', trustScore: 88 },
-    prizePool: 12.5, stakeWhite: 4.5, stakeBlack: 8.0,
-    poolHistory: [1.0, 2.0, 3.5, 5.0, 6.5, 8.0, 9.0, 10.0, 11.5, 12.5],
-    whiteHistory: [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.2, 4.5],
-    blackHistory: [0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 5.5, 6.0, 7.3, 8.0],
-    spectators: 312, timeControl: 30,
-  },
-  {
-    id: '4', status: 'waiting', move: 0,
-    white: { name: 'ByteBishop', trustScore: 74 },
-    black: { name: 'HashKnight', trustScore: 69 },
-    prizePool: 0.5, stakeWhite: 0.25, stakeBlack: 0.25,
-    poolHistory: [0, 0.1, 0.2, 0.3, 0.35, 0.4, 0.45, 0.48, 0.5, 0.5],
-    whiteHistory: [0, 0.05, 0.1, 0.15, 0.2, 0.22, 0.23, 0.24, 0.25, 0.25],
-    blackHistory: [0, 0.05, 0.1, 0.15, 0.15, 0.18, 0.22, 0.24, 0.25, 0.25],
-    spectators: 7, timeControl: 5,
-  },
-  {
-    id: '5', status: 'live', move: 17,
-    white: { name: 'LedgerQueen', trustScore: 93 },
-    black: { name: 'SigmaRook', trustScore: 87 },
-    prizePool: 3.2, stakeWhite: 2.6, stakeBlack: 0.6,
-    poolHistory: [0.2, 0.5, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.0, 3.2],
-    whiteHistory: [0.2, 0.4, 0.6, 1.0, 1.4, 1.8, 2.0, 2.2, 2.4, 2.6],
-    blackHistory: [0, 0.1, 0.2, 0.2, 0.2, 0.2, 0.4, 0.6, 0.6, 0.6],
-    spectators: 51, timeControl: null,
-  },
-  {
-    id: '6', status: 'live', move: 55,
-    white: { name: 'MintPawn', trustScore: 96 },
-    black: { name: 'NullKing', trustScore: 99 },
-    prizePool: 20.0, stakeWhite: 9.0, stakeBlack: 11.0,
-    poolHistory: [2, 4, 6, 8, 10, 12, 14, 16, 18, 20],
-    whiteHistory: [1, 2, 3, 4, 5, 6, 7, 7.5, 8, 9],
-    blackHistory: [1, 2, 3, 4, 5, 6, 7, 8.5, 10, 11],
-    spectators: 891, timeControl: null,
-  },
-]
+interface ApiGame {
+  id: string
+  code: string
+  whiteWallet: string | null
+  blackWallet: string | null
+  status: 'WAITING' | 'ACTIVE' | 'ENDED'
+  timeControl: number | null
+  isPractice: boolean
+  isHosted: boolean
+  hostWallet: string | null
+  prizePool: number
+  stakesWhite: number
+  stakesBlack: number
+  white: ApiPlayer | null
+  black: ApiPlayer | null
+  moves: unknown[]
+}
 
-// ─── Dual animated sparkline ─────────────────────────────────────────────────
-// Both lines share one SVG + one shared scale so they're always comparable.
+function playerName(p: ApiPlayer | null): string {
+  if (!p) return '—'
+  return p.username ?? p.wallet.slice(0, 6) + '…'
+}
+
+// Generates a linear ramp from 0 → end with n points (for sparkline)
+function ramp(end: number, n = 6): number[] {
+  if (n < 2) return [end]
+  return Array.from({ length: n }, (_, i) => (i / (n - 1)) * end)
+}
+
+// ─── Dual animated sparkline ──────────────────────────────────────────────────
 
 interface DualSparklineProps {
   whiteData: number[]
@@ -117,7 +72,6 @@ function DualSparkline({ whiteData, blackData, w = 240, h = 110 }: DualSparkline
   const blackRef = useRef<SVGPathElement>(null)
   const pad = 8
 
-  // Shared scale so both lines are visually comparable
   const allVals = [...whiteData, ...blackData]
   const min = Math.min(...allVals)
   const max = Math.max(...allVals)
@@ -126,11 +80,9 @@ function DualSparkline({ whiteData, blackData, w = 240, h = 110 }: DualSparkline
   const white = buildSmooth(whiteData, min, range, w, h, pad)
   const black = buildSmooth(blackData, min, range, w, h, pad)
 
-  // Area fills
   const whiteArea = `M 0,${h} ${white.d.slice(2)} L ${w},${h} Z`
   const blackArea = `M 0,${h} ${black.d.slice(2)} L ${w},${h} Z`
 
-  // Animate both lines drawing in from left
   function animateLine(ref: React.RefObject<SVGPathElement | null>) {
     const el = ref.current
     if (!el) return
@@ -147,7 +99,6 @@ function DualSparkline({ whiteData, blackData, w = 240, h = 110 }: DualSparkline
     animateLine(blackRef)
   }, [])
 
-  // Draw the higher line on top at the last point
   const whiteOnTop = whiteData[whiteData.length - 1] >= blackData[blackData.length - 1]
 
   const purpleId = `pu-${w}`
@@ -180,7 +131,6 @@ function DualSparkline({ whiteData, blackData, w = 240, h = 110 }: DualSparkline
           <stop offset="100%" stopColor="#14F195" stopOpacity="0" />
         </linearGradient>
       </defs>
-      {/* Render lower line first, higher line on top */}
       {whiteOnTop ? <>{blackLayer}{whiteLayer}</> : <>{whiteLayer}{blackLayer}</>}
     </svg>
   )
@@ -212,12 +162,17 @@ function StakeBar({ whitePct }: { whitePct: number }) {
 
 // ─── Game card ────────────────────────────────────────────────────────────────
 
-function GameCard({ game }: { game: GameListing }) {
-  const whitePct = (game.stakeWhite / game.prizePool) * 100
-  const isLive = game.status === 'live'
+function GameCard({ game }: { game: ApiGame }) {
+  const total = game.stakesWhite + game.stakesBlack
+  const whitePct = total > 0 ? (game.stakesWhite / total) * 100 : 50
+  const isLive = game.status === 'ACTIVE'
 
-  // Leading side drives card accent
   const leadColor = whitePct >= 50 ? '#9945FF' : '#14F195'
+
+  const whiteName = playerName(game.white)
+  const blackName = playerName(game.black)
+  const whiteScore = game.white?.trustScore ?? 0
+  const blackScore = game.black?.trustScore ?? 0
 
   return (
     <Link to={`/games/${game.id}`} className="block group">
@@ -242,44 +197,44 @@ function GameCard({ game }: { game: GameListing }) {
             )}
           </div>
           <div className="flex items-center gap-2 text-[10px]" style={{ color: '#8888aa' }}>
-            {game.timeControl && <span>⏱ {game.timeControl}m</span>}
-            {isLive && <span>Move {game.move}</span>}
-            <span>👁 {game.spectators}</span>
+            {game.timeControl && <span>⏱ {Math.floor(game.timeControl / 60)}m</span>}
+            {isLive && <span>Move {game.moves.length}</span>}
           </div>
         </div>
 
         {/* Players */}
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <Avatar username={game.white.name} size="sm" />
+            <Avatar username={whiteName} size="sm" />
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-white truncate">{game.white.name}</p>
-              <p className="text-[9px]" style={{ color: '#9945FF' }}>Trust {game.white.trustScore}</p>
+              <p className="text-xs font-semibold text-white truncate">{whiteName}</p>
+              <p className="text-[9px]" style={{ color: '#9945FF' }}>Trust {whiteScore}</p>
             </div>
           </div>
           <span className="text-[10px] font-bold flex-shrink-0" style={{ color: '#8888aa' }}>VS</span>
           <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
             <div className="min-w-0 text-right">
-              <p className="text-xs font-semibold text-white truncate">{game.black.name}</p>
-              <p className="text-[9px]" style={{ color: '#14F195' }}>Trust {game.black.trustScore}</p>
+              <p className="text-xs font-semibold text-white truncate">{blackName}</p>
+              <p className="text-[9px]" style={{ color: '#14F195' }}>Trust {blackScore}</p>
             </div>
-            <Avatar username={game.black.name} size="sm" />
+            <Avatar username={blackName} size="sm" />
           </div>
         </div>
 
         {/* Pool sparkline */}
         <div className="relative overflow-hidden rounded-lg" style={{ background: '#0a0a0f', height: 110 }}>
           <div className="absolute inset-0">
-            <DualSparkline whiteData={game.whiteHistory} blackData={game.blackHistory} />
+            <DualSparkline
+              whiteData={ramp(game.stakesWhite)}
+              blackData={ramp(game.stakesBlack)}
+            />
           </div>
-          {/* Prize pool label top-left */}
           <div className="absolute top-2 left-3 pointer-events-none">
             <p className="text-[9px] font-medium leading-none" style={{ color: '#8888aa' }}>Prize Pool</p>
             <p className="text-sm font-bold leading-tight" style={{ color: '#FFD700' }}>
               {game.prizePool.toFixed(4)} SOL
             </p>
           </div>
-          {/* Legend top-right */}
           <div className="absolute top-2 right-3 flex items-center gap-2 pointer-events-none">
             <span className="flex items-center gap-1 text-[9px]" style={{ color: '#9945FF' }}>
               <span className="inline-block w-2 h-0.5 rounded" style={{ background: '#9945FF' }} />♔
@@ -293,15 +248,15 @@ function GameCard({ game }: { game: GameListing }) {
         {/* Stake bar */}
         <StakeBar whitePct={whitePct} />
 
-        {/* Footer: individual stakes */}
+        {/* Footer */}
         <div className="flex justify-between text-[10px]" style={{ color: '#8888aa' }}>
           <span>
             <span style={{ color: '#9945FF' }}>♔</span>{' '}
-            <span className="font-semibold text-white">{game.stakeWhite.toFixed(4)}</span> SOL staked
+            <span className="font-semibold text-white">{game.stakesWhite.toFixed(4)}</span> SOL staked
           </span>
           <span>
             <span style={{ color: '#14F195' }}>♚</span>{' '}
-            <span className="font-semibold text-white">{game.stakeBlack.toFixed(4)}</span> SOL staked
+            <span className="font-semibold text-white">{game.stakesBlack.toFixed(4)}</span> SOL staked
           </span>
         </div>
       </div>
@@ -372,11 +327,35 @@ function PracticeGameCard({ game }: { game: PracticeGame }) {
 }
 
 export default function GamesPage() {
-  const [filter, setFilter] = useState<Filter>('All')
   const { status } = useAuthStore()
+  const isAuthenticated = status === 'authenticated'
+  const [filter, setFilter] = useState<Filter>(isAuthenticated ? 'All' : 'Live')
+
+  const [games, setGames] = useState<ApiGame[]>([])
+  const [gamesLoading, setGamesLoading] = useState(true)
+
   const [practiceGames, setPracticeGames] = useState<PracticeGame[]>([])
   const [practiceLoading, setPracticeLoading] = useState(false)
 
+  // Fetch public games on mount
+  useEffect(() => {
+    setGamesLoading(true)
+    api.get<ApiGame[]>('/api/v1/games')
+      .then(setGames)
+      .catch(() => setGames([]))
+      .finally(() => setGamesLoading(false))
+  }, [])
+
+  // Subscribe to real-time game list updates
+  useEffect(() => {
+    if (!socket.connected) socket.connect()
+
+    const handler = (updated: ApiGame[]) => setGames(updated)
+    socket.on('game-list-update', handler)
+    return () => { socket.off('game-list-update', handler) }
+  }, [])
+
+  // Fetch practice games when that tab is active
   useEffect(() => {
     if (filter !== 'My Practice' || status !== 'authenticated') return
     setPracticeLoading(true)
@@ -386,15 +365,15 @@ export default function GamesPage() {
       .finally(() => setPracticeLoading(false))
   }, [filter, status])
 
-  const visible = MOCK_GAMES.filter(g => {
-    if (filter === 'Live') return g.status === 'live'
-    if (filter === 'Waiting') return g.status === 'waiting'
+  const visible = games.filter(g => {
+    if (filter === 'Live') return g.status === 'ACTIVE'
+    if (filter === 'Waiting') return g.status === 'WAITING'
     if (filter === 'My Practice') return false
-    return true
+    return g.status !== 'ENDED'
   })
 
-  const totalPool = MOCK_GAMES.reduce((s, g) => s + g.prizePool, 0)
-  const liveCount = MOCK_GAMES.filter(g => g.status === 'live').length
+  const totalPool = games.reduce((s, g) => s + g.prizePool, 0)
+  const liveCount = games.filter(g => g.status === 'ACTIVE').length
 
   return (
     <div className="px-6 py-6 flex flex-col gap-6">
@@ -429,8 +408,8 @@ export default function GamesPage() {
         )}
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-2 flex-wrap">
+      {/* Filter tabs — only authenticated users get all options */}
+      {isAuthenticated && <div className="flex gap-2 flex-wrap">
         {FILTERS.map(f => {
           if (f === 'My Practice' && status !== 'authenticated') return null
           return (
@@ -451,7 +430,7 @@ export default function GamesPage() {
             </button>
           )
         })}
-      </div>
+      </div>}
 
       {/* My Practice list */}
       {filter === 'My Practice' && (
@@ -474,9 +453,25 @@ export default function GamesPage() {
 
       {/* Public games grid */}
       {filter !== 'My Practice' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {visible.map(game => <GameCard key={game.id} game={game} />)}
-        </div>
+        <>
+          {gamesLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[1, 2, 3, 4].map(i => <SkeletonGameCard key={i} />)}
+            </div>
+          ) : visible.length === 0 ? (
+            <div
+              className="py-16 flex flex-col items-center gap-2"
+              style={{ border: '1.5px dashed #2a2a3a' }}
+            >
+              <p className="text-sm" style={{ color: '#8888aa' }}>No games right now</p>
+              <p className="text-xs" style={{ color: '#444466' }}>Create one to get started</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {visible.map(game => <GameCard key={game.id} game={game} />)}
+            </div>
+          )}
+        </>
       )}
 
     </div>

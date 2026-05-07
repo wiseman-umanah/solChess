@@ -12,12 +12,13 @@ export function useSocketLifecycle() {
 
   useEffect(() => {
     if (status === 'authenticated' && wallet) {
-      if (!socket.connected) {
-        socket.auth = { wallet }
-        socket.connect()
-      }
-    } else if (status === 'idle') {
+      // Reconnect with wallet auth so the server knows who we are
       if (socket.connected) socket.disconnect()
+      socket.auth = { wallet }
+      socket.connect()
+    } else if (status === 'idle' && !socket.connected) {
+      // Connect without wallet for spectating + world chat
+      socket.connect()
     }
   }, [status, wallet])
 }

@@ -10,6 +10,7 @@ interface ChessBoardProps {
   onMove?: (move: { from: string; to: string; promotion?: string }) => boolean
   disabled?: boolean
   lastMove?: { from: string; to: string } | null
+  customSquares?: Record<string, React.CSSProperties>
 }
 
 export default function ChessBoard({
@@ -18,6 +19,7 @@ export default function ChessBoard({
   onMove,
   disabled = false,
   lastMove = null,
+  customSquares = {},
 }: ChessBoardProps) {
   const [optionSquares, setOptionSquares] = useState<Record<string, React.CSSProperties>>({})
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null)
@@ -78,6 +80,7 @@ export default function ChessBoard({
   }
 
   const squareStyles: Record<string, React.CSSProperties> = {
+    ...customSquares,
     ...optionSquares,
     ...(lastMove
       ? {

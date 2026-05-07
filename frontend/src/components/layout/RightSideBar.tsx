@@ -21,6 +21,7 @@ export default function RightSidebar({ activePrivateChat, activeChatUsername }: 
 
   return (
     <aside
+      id="tour-right-sidebar"
       className="fixed top-[60px] right-0 bottom-0 w-[350px] flex flex-col overflow-hidden"
       style={{
         background: 'rgba(19, 19, 26, 0.8)',

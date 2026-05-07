@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Modal from '../ui/Modal'
+import { api } from '../../lib/apiClient'
+import { useAuthStore } from '../../stores/authStore'
 
-type Mode = 'create' | 'host' | 'friend'
-type Stage = 'config' | 'creating' | 'ready'
+type Mode = 'create' | 'host'
 
 interface CreateModalProps {
   open: boolean
@@ -10,274 +12,284 @@ interface CreateModalProps {
   onClose: () => void
 }
 
-const MODE_LABELS: Record<Mode, { title: string; icon: string; color: string }> = {
-  create: { title: 'Create Game',   icon: '♟', color: '#9945FF' },
-  host:   { title: 'Host Event',    icon: '⬡', color: '#9945FF' },
-  friend: { title: 'Play a Friend', icon: '♥', color: '#14F195' },
-}
+const TIME_OPTIONS = [
+  { label: 'No timer', value: null },
+  { label: '3 min',   value: 180  },
+  { label: '5 min',   value: 300  },
+  { label: '10 min',  value: 600  },
+  { label: '15 min',  value: 900  },
+  { label: '30 min',  value: 1800 },
+]
 
-const TIME_OPTIONS = [5, 10, 15, 25, 30]
-const QUICK_CHIPS = [0.01, 0.05, 0.1, 0.5, 1, 5]
+const COLORS = [
+  { value: 'white'  as const, label: '♔ White', desc: 'Move first'  },
+  { value: 'black'  as const, label: '♚ Black', desc: 'Move second' },
+  { value: 'random' as const, label: '⚄ Random', desc: 'Surprise me' },
+]
 
-function randomCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  return 'CHESS-' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
-}
+type Step = 'config' | 'created'
 
 export default function CreateModal({ open, mode, onClose }: CreateModalProps) {
-  const [timeBased, setTimeBased] = useState(false)
-  const [selectedTime, setSelectedTime] = useState(10)
-  const [wager, setWager] = useState<number>(0.01)
-  const [customInput, setCustomInput] = useState('')
-  const [stage, setStage] = useState<Stage>('config')
-  const [gameCode, setGameCode] = useState('')
-  const [copied, setCopied] = useState(false)
+  const navigate  = useNavigate()
+  const { status } = useAuthStore()
+  const isAuth    = status === 'authenticated'
+  const isHost    = mode === 'host'
 
-  const meta = MODE_LABELS[mode]
-  const showWager = mode === 'create' || mode === 'host'
+  const [step,        setStep]        = useState<Step>('config')
+  const [timeControl, setTimeControl] = useState<number | null>(300)
+  const [color,       setColor]       = useState<'white' | 'black' | 'random'>('white')
+  const [loading,     setLoading]     = useState(false)
+  const [error,       setError]       = useState<string | null>(null)
+  const [gameCode,    setGameCode]    = useState('')
+  const [gameId,      setGameId]      = useState('')
+  const [codeCopied,  setCodeCopied]  = useState(false)
+  const [linkCopied,  setLinkCopied]  = useState(false)
 
-  function handleCustomWager(val: string) {
-    setCustomInput(val)
-    const n = parseFloat(val)
-    if (!isNaN(n) && n >= 0.01) setWager(n)
+  const accentColor = isHost ? '#14F195' : '#9945FF'
+
+  async function handleCreate() {
+    if (!isAuth) return
+    setLoading(true)
+    setError(null)
+    try {
+      const resolvedColor = (!isHost && color === 'random')
+        ? (Math.random() < 0.5 ? 'white' : 'black')
+        : (isHost ? 'white' : color)   // color ignored for hosted games
+      const res = await api.post<{ gameId: string; code: string }>('/api/v1/games', {
+        timeControl,
+        isPractice: false,
+        isHosted: isHost,
+        creatorColor: resolvedColor,
+      })
+      setGameCode(res.code)
+      setGameId(res.gameId)
+      setStep('created')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to create game')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  function handleChip(chip: number) {
-    setWager(chip)
-    setCustomInput('')
-  }
-
-  function handleCreate() {
-    setStage('creating')
-    // Simulate backend call
-    setTimeout(() => {
-      setGameCode(randomCode())
-      setStage('ready')
-    }, 1200)
-  }
-
-  function handleStart() {
-    onClose()
-    // Reset for next open
-    setTimeout(() => {
-      setStage('config')
-      setGameCode('')
-      setCopied(false)
-    }, 300)
-  }
-
-  function handleCopy() {
+  function copyCode() {
     navigator.clipboard.writeText(gameCode)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setCodeCopied(true)
+    setTimeout(() => setCodeCopied(false), 2000)
+  }
+
+  function copyLink() {
+    navigator.clipboard.writeText(`${window.location.origin}/games/${gameId}`)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2000)
+  }
+
+  function handleEnter() {
+    onClose()
+    navigate(`/games/${gameId}`)
+  }
+
+  function handleClose() {
+    setStep('config')
+    setError(null)
+    setCodeCopied(false)
+    setLinkCopied(false)
+    onClose()
   }
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={handleClose}>
 
       {/* Header */}
       <div className="flex items-center gap-3 pr-6">
         <div
           className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-          style={{ background: `${meta.color}22`, border: `1px solid ${meta.color}44` }}
+          style={{ background: `${accentColor}18`, border: `1px solid ${accentColor}44` }}
         >
-          {meta.icon}
+          {isHost ? '⬡' : '♟'}
         </div>
         <div>
-          <h2 className="text-lg font-bold text-white">{meta.title}</h2>
-          <p className="text-xs" style={{ color: '#8888aa' }}>Configure your game settings</p>
+          <h2 className="text-lg font-bold text-white">
+            {step === 'config' ? (isHost ? 'Host Event' : 'Create Game') : (isHost ? 'Event Created!' : 'Game Created!')}
+          </h2>
+          <p className="text-xs" style={{ color: '#8888aa' }}>
+            {step === 'config'
+              ? (isHost ? 'You watch · Two players join by code' : 'Public game · spectators welcome')
+              : 'Share the code with your players'}
+          </p>
         </div>
       </div>
 
-      {/* Config fields — hidden once code is ready */}
-      {stage === 'config' && (
+      {step === 'config' ? (
         <>
-          {/* Time-based toggle */}
-          <div
-            className="flex items-center justify-between px-4 py-3"
-            style={{ background: '#0a0a0f', border: '1px solid #2a2a3a' }}
-          >
-            <div>
-              <p className="text-sm font-medium text-white">Time-based game</p>
-              <p className="text-[11px] mt-0.5" style={{ color: '#8888aa' }}>
-                Each player has a fixed clock per game
-              </p>
-            </div>
-            <button
-              onClick={() => setTimeBased(v => !v)}
-              className="relative w-11 h-6 rounded-full transition-all duration-200 flex-shrink-0"
-              style={{ background: timeBased ? '#9945FF' : '#2a2a3a' }}
-              aria-pressed={timeBased}
-              aria-label="Toggle time-based game"
+          {/* Host-only info banner */}
+          {isHost && (
+            <div
+              className="flex items-start gap-3 px-4 py-3"
+              style={{ background: 'rgba(20,241,149,0.06)', border: '1px solid rgba(20,241,149,0.2)' }}
             >
-              <span
-                className="absolute top-0.5 w-5 h-5 rounded-full transition-all duration-200"
-                style={{ background: '#ffffff', left: timeBased ? '22px' : '2px', boxShadow: '0 1px 4px rgba(0,0,0,0.4)' }}
-              />
-            </button>
-          </div>
+              <span className="text-lg flex-shrink-0">👁</span>
+              <div>
+                <p className="text-xs font-semibold text-white">You are the host</p>
+                <p className="text-[11px] mt-0.5" style={{ color: '#8888aa' }}>
+                  You will spectate only. Share the code with two players — the first to join gets white, the second gets black.
+                </p>
+              </div>
+            </div>
+          )}
 
-          {timeBased && (
-            <div className="flex gap-2 flex-wrap">
-              {TIME_OPTIONS.map(t => (
+          {/* Color picker — only for regular create */}
+          {!isHost && (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>
+                Play as
+              </p>
+              <div className="flex gap-2">
+                {COLORS.map((c) => (
+                  <button
+                    key={c.value}
+                    onClick={() => setColor(c.value)}
+                    className="flex-1 flex flex-col items-center py-2.5 transition-all duration-150"
+                    style={{
+                      background: color === c.value ? `${accentColor}12` : '#0a0a0f',
+                      border: `1.5px solid ${color === c.value ? accentColor : '#2a2a3a'}`,
+                      boxShadow: color === c.value ? `0 0 12px ${accentColor}28` : 'none',
+                    }}
+                    aria-pressed={color === c.value}
+                  >
+                    <span className="text-sm mb-0.5">{c.label}</span>
+                    <span className="text-[9px]" style={{ color: '#8888aa' }}>{c.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Time control */}
+          <div className="flex flex-col gap-2">
+            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>
+              Time control
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {TIME_OPTIONS.map((t) => (
                 <button
-                  key={t}
-                  onClick={() => setSelectedTime(t)}
-                  className="flex-1 min-w-[52px] py-2 text-sm font-semibold transition-all duration-150"
+                  key={String(t.value)}
+                  onClick={() => setTimeControl(t.value)}
+                  className="py-2 text-xs font-semibold transition-all"
                   style={{
-                    background: selectedTime === t ? '#9945FF' : '#0a0a0f',
-                    border: `1.5px solid ${selectedTime === t ? '#9945FF' : '#2a2a3a'}`,
-                    color: selectedTime === t ? '#ffffff' : '#8888aa',
-                    boxShadow: selectedTime === t ? '0 0 12px rgba(153,69,255,0.35)' : 'none',
+                    background: timeControl === t.value ? 'rgba(153,69,255,0.12)' : '#0a0a0f',
+                    border: `1.5px solid ${timeControl === t.value ? '#9945FF' : '#2a2a3a'}`,
+                    color: timeControl === t.value ? '#9945FF' : '#ffffff',
                   }}
+                  aria-pressed={timeControl === t.value}
                 >
-                  {t}m
+                  {t.label}
                 </button>
               ))}
             </div>
-          )}
+          </div>
 
-          {/* Wager */}
-          {showWager && (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>Wager</p>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-xl font-bold tabular-nums" style={{ color: '#FFD700' }}>
-                    {wager.toFixed(wager % 1 === 0 ? 2 : Math.min(4, (wager.toString().split('.')[1] ?? '').length))}
-                  </span>
-                  <span className="text-xs" style={{ color: '#8888aa' }}>SOL</span>
-                </div>
-              </div>
-
-              {/* Quick chips */}
-              <div className="flex gap-1.5">
-                {QUICK_CHIPS.map(chip => {
-                  const active = !customInput && wager === chip
-                  return (
-                    <button
-                      key={chip}
-                      onClick={() => handleChip(chip)}
-                      className="flex-1 py-2 text-xs font-bold transition-all duration-150"
-                      style={{
-                        background: active ? 'rgba(20,241,149,0.1)' : '#0a0a0f',
-                        border: `1.5px solid ${active ? '#14F195' : '#2a2a3a'}`,
-                        color: active ? '#14F195' : '#8888aa',
-                        boxShadow: active ? '0 0 10px rgba(20,241,149,0.2)' : 'none',
-                      }}
-                    >
-                      {chip}
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Custom amount — stepper + freeform */}
-              <div
-                className="flex items-center gap-0 overflow-hidden"
-                style={{ border: '1.5px solid #2a2a3a', background: '#0a0a0f' }}
-              >
-                <button
-                  onClick={() => {
-                    const next = Math.max(0.01, parseFloat((wager - 0.01).toFixed(4)))
-                    setWager(next)
-                    setCustomInput(next.toString())
-                  }}
-                  className="px-4 py-3 text-lg font-bold hover:opacity-70 transition-opacity flex-shrink-0"
-                  style={{ color: '#8888aa', borderRight: '1px solid #2a2a3a' }}
-                  aria-label="Decrease wager"
-                >
-                  −
-                </button>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={customInput || wager}
-                  onChange={e => handleCustomWager(e.target.value)}
-                  className="flex-1 text-center font-mono font-bold text-base outline-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  style={{ color: '#FFD700' }}
-                  aria-label="Custom wager amount"
-                />
-                <span className="text-xs pr-3 flex-shrink-0" style={{ color: '#8888aa' }}>SOL</span>
-                <button
-                  onClick={() => {
-                    const next = parseFloat((wager + 0.01).toFixed(4))
-                    setWager(next)
-                    setCustomInput(next.toString())
-                  }}
-                  className="px-4 py-3 text-lg font-bold hover:opacity-70 transition-opacity flex-shrink-0"
-                  style={{ color: '#14F195', borderLeft: '1px solid #2a2a3a' }}
-                  aria-label="Increase wager"
-                >
-                  +
-                </button>
-              </div>
-
-              <p className="text-[10px] text-center" style={{ color: '#55556a' }}>
-                Min 0.01 SOL · Held in escrow · Released on-chain to winner
-              </p>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Game code — shown after backend responds */}
-      {stage === 'ready' && (
-        <div className="flex flex-col gap-3">
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>
-            Game Code
-          </p>
+          {/* Wager placeholder */}
           <div
-            className="flex items-center justify-between px-4 py-4 "
-            style={{ background: '#0a0a0f', border: `1.5px solid ${meta.color}55` }}
+            className="flex items-center justify-between px-4 py-3"
+            style={{ background: '#0a0a0f', border: '1px dashed #2a2a3a', opacity: 0.5 }}
           >
+            <div>
+              <p className="text-xs font-semibold text-white">Wager</p>
+              <p className="text-[10px] mt-0.5" style={{ color: '#8888aa' }}>On-chain escrow · coming soon</p>
+            </div>
+            <span className="text-xs font-bold" style={{ color: '#FFD700' }}>— SOL</span>
+          </div>
+
+          {error && <p className="text-xs" style={{ color: '#FF3B30' }}>{error}</p>}
+
+          <div className="relative mt-1">
+            <div className="absolute w-full h-full" style={{ top: 4, left: 4, background: accentColor }} />
+            <button
+              onClick={handleCreate}
+              disabled={loading || !isAuth}
+              className="relative w-full py-3 font-bold text-sm uppercase tracking-widest transition-transform duration-75 active:translate-x-1 active:translate-y-1 disabled:opacity-60"
+              style={{ background: '#13131a', border: `1.5px solid ${accentColor}`, color: accentColor }}
+            >
+              {!isAuth ? 'Connect wallet to play' : loading ? 'Creating...' : (isHost ? 'Host Event' : 'Create Game')}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Code display */}
+          <div
+            className="flex flex-col items-center gap-3 py-5"
+            style={{ background: '#0a0a0f', border: '1.5px solid #2a2a3a' }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>
+              {isHost ? 'Player Code' : 'Opponent Code'}
+            </p>
             <span
-              className="font-mono text-xl font-bold tracking-widest"
-              style={{ color: meta.color, textShadow: `0 0 20px ${meta.color}55` }}
+              className="text-3xl font-mono font-bold tracking-widest"
+              style={{ color: accentColor, letterSpacing: '0.15em' }}
             >
               {gameCode}
             </span>
+            {isHost && (
+              <p className="text-[10px] text-center px-4" style={{ color: '#8888aa' }}>
+                Share with both players — first to join = white, second = black
+              </p>
+            )}
             <button
-              onClick={handleCopy}
-              className="text-xs px-3 py-1.5 rounded-lg transition-all"
+              onClick={copyCode}
+              className="px-4 py-1.5 text-xs font-semibold transition-all hover:opacity-80"
               style={{
-                background: copied ? 'rgba(20,241,149,0.15)' : '#2a2a3a',
-                color: copied ? '#14F195' : '#8888aa',
-                border: copied ? '1px solid #14F19555' : '1px solid transparent',
+                background: codeCopied ? `${accentColor}18` : 'transparent',
+                border: `1px solid ${codeCopied ? accentColor : '#2a2a3a'}`,
+                color: codeCopied ? accentColor : '#8888aa',
               }}
             >
-              {copied ? 'Copied ✓' : 'Copy'}
+              {codeCopied ? '✓ Copied!' : 'Copy Code'}
             </button>
           </div>
-          <p className="text-[11px] text-center" style={{ color: '#8888aa' }}>
-            Share this code with your opponent — they join, you start
-          </p>
-        </div>
-      )}
 
-      {/* CTA button */}
-      <div className="relative mt-1">
-        <div
-          className="absolute w-full h-full"
-          style={{ top: 4, left: 4, background: meta.color }}
-        />
-        <button
-          onClick={stage === 'ready' ? handleStart : handleCreate}
-          disabled={stage === 'creating'}
-          className="relative w-full py-3 font-bold text-sm uppercase tracking-widest transition-transform duration-75 active:translate-x-1 active:translate-y-1 disabled:opacity-60"
-          style={{ background: '#13131a', border: `1.5px solid ${meta.color}`, color: meta.color }}
-        >
-          {stage === 'config'   && 'Create Game'}
-          {stage === 'creating' && (
-            <span className="flex items-center justify-center gap-2">
-              <span className="inline-block w-3 h-3 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: meta.color, borderTopColor: 'transparent' }} />
-              Creating...
-            </span>
+          {/* Spectator link */}
+          <div
+            className="flex items-center justify-between px-4 py-2.5"
+            style={{ background: '#0a0a0f', border: '1px solid #2a2a3a' }}
+          >
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#555577' }}>
+                Spectator link
+              </p>
+              <p className="text-[10px] mt-0.5" style={{ color: '#8888aa' }}>Share with viewers</p>
+            </div>
+            <button
+              onClick={copyLink}
+              className="px-3 py-1.5 text-xs font-semibold transition-all flex-shrink-0"
+              style={{
+                background: linkCopied ? 'rgba(20,241,149,0.12)' : 'transparent',
+                border: `1px solid ${linkCopied ? '#14F195' : '#2a2a3a'}`,
+                color: linkCopied ? '#14F195' : '#8888aa',
+              }}
+            >
+              {linkCopied ? '✓ Copied!' : '🔗 Copy Link'}
+            </button>
+          </div>
+
+          {!isHost && (
+            <p className="text-xs text-center" style={{ color: '#444466' }}>
+              Only the first to join by code becomes your opponent. Everyone else spectates.
+            </p>
           )}
-          {stage === 'ready' && 'Start Game'}
-        </button>
-      </div>
+
+          <div className="relative">
+            <div className="absolute w-full h-full" style={{ top: 4, left: 4, background: accentColor }} />
+            <button
+              onClick={handleEnter}
+              className="relative w-full py-3 font-bold text-sm uppercase tracking-widest transition-transform duration-75 active:translate-x-1 active:translate-y-1"
+              style={{ background: '#13131a', border: `1.5px solid ${accentColor}`, color: accentColor }}
+            >
+              {isHost ? 'Watch Game' : 'Enter Game'}
+            </button>
+          </div>
+        </>
+      )}
 
     </Modal>
   )

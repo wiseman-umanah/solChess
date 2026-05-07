@@ -1,13 +1,15 @@
 model Game {
   id           String      @id @default(cuid())
   code         String      @unique
-  whiteWallet  String
+  whiteWallet  String?
   blackWallet  String?
   fen          String      @default("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
   status       GameStatus  @default(WAITING)
   timeControl  Int?        // seconds per player; null = untimed
   isPractice   Boolean     @default(false)
-  creatorColor String      @default("white") // 'white' | 'black'
+  isHosted     Boolean     @default(false)  // host is spectator-only; two external players join
+  hostWallet   String?                      // wallet of the host (non-player spectator)
+  creatorColor String      @default("white") // 'white' | 'black' | 'host'
   prizePool    Float       @default(0)
   stakesWhite  Float       @default(0)
   stakesBlack  Float       @default(0)
@@ -16,7 +18,7 @@ model Game {
   createdAt    DateTime    @default(now())
   endedAt      DateTime?
 
-  white        User        @relation("WhitePlayer", fields: [whiteWallet], references: [wallet])
+  white        User?       @relation("WhitePlayer", fields: [whiteWallet], references: [wallet])
   black        User?       @relation("BlackPlayer", fields: [blackWallet], references: [wallet])
   moves        Move[]
   stakes       Stake[]
