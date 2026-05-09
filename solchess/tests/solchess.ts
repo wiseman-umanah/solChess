@@ -18,11 +18,12 @@ const SEED_STATS    = Buffer.from("stats");
 const SEED_PLATFORM = Buffer.from("platform");
 
 // ─── Fee constants (must match constants.rs) ──────────────────────────────────
-const FEE_WIN_BPS       = 300;   // 3% of game vault on decisive result
-const FEE_DRAW_BPS      = 300;   // 3% of game vault on draw
-const STAKE_FEE_WIN_BPS = 500;   // 5% of staking profit on win
-const STAKE_FEE_DRAW_BPS = 100;  // 1% gross on draw stakes
-const BPS_DENOMINATOR   = 10_000;
+const FEE_WIN_BPS        = 300;   // 3% of game vault on decisive result
+const FEE_DRAW_BPS       = 300;   // 3% of game vault on draw
+const STAKE_FEE_WIN_BPS  = 500;   // 5% of staking profit on win
+const STAKE_FEE_DRAW_BPS = 100;   // 1% gross on draw stakes
+const BPS_DENOMINATOR    = 10_000;
+const AUTHORITY_FEE_BPS  = 1_000; // 10% of platform fee → authority (gas top-up)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -104,20 +105,34 @@ describe("solchess", () => {
       airdrop(conn, spectator.publicKey),
     ]);
 
-    // ── Init platform — runs ONCE; all other tests depend on this ─────────────
-    await program.methods
-      .initPlatform(authority.publicKey, treasury.publicKey)
-      .accountsStrict({
-        admin: authority.publicKey, platformConfig,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([authority])
-      .rpc();
+    // ── Init platform — use provider wallet as admin (persistent keypair).
+    // On re-runs against the same validator the PDA already exists, so we
+    // call updatePlatform instead to rotate authority/treasury to fresh keys.
+    const admin = (provider.wallet as anchor.Wallet).payer;
+
+    try {
+      await program.methods
+        .initPlatform(authority.publicKey, treasury.publicKey)
+        .accountsStrict({
+          admin: admin.publicKey, platformConfig,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([admin])
+        .rpc();
+      console.log("  platform init  : OK (first run)\n");
+    } catch {
+      // PDA already exists — rotate to fresh test keypairs via updatePlatform
+      await program.methods
+        .updatePlatform(authority.publicKey, treasury.publicKey)
+        .accountsStrict({ admin: admin.publicKey, platformConfig })
+        .signers([admin])
+        .rpc();
+      console.log("  platform init  : OK (rotated via updatePlatform)\n");
+    }
 
     const cfg = await program.account.platformConfig.fetch(platformConfig);
     assert.ok(cfg.authority.equals(authority.publicKey));
     assert.ok(cfg.treasury.equals(treasury.publicKey));
-    console.log("  platform init  : OK\n");
   });
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -126,20 +141,58 @@ describe("solchess", () => {
 
   describe("Platform Config", () => {
     it("cannot initialise platform config twice", async () => {
+      const admin = (provider.wallet as anchor.Wallet).payer;
       try {
         await program.methods
           .initPlatform(authority.publicKey, treasury.publicKey)
           .accountsStrict({
-            admin: authority.publicKey, platformConfig,
+            admin: admin.publicKey, platformConfig,
             systemProgram: SystemProgram.programId,
           })
-          .signers([authority])
+          .signers([admin])
           .rpc();
         assert.fail("Expected init to fail — account already exists");
       } catch (err: any) {
-        // Anchor will throw because the PDA already exists (init constraint)
         assert.ok(err, "correctly rejected: cannot re-init platform config");
         console.log(`    correctly rejected: double init`);
+      }
+    });
+
+    it("admin can rotate authority and treasury via updatePlatform", async () => {
+      const admin       = (provider.wallet as anchor.Wallet).payer;
+      const newAuthority = Keypair.generate();
+      const newTreasury  = Keypair.generate();
+
+      await program.methods
+        .updatePlatform(newAuthority.publicKey, newTreasury.publicKey)
+        .accountsStrict({ admin: admin.publicKey, platformConfig })
+        .signers([admin])
+        .rpc();
+
+      const cfg = await program.account.platformConfig.fetch(platformConfig);
+      assert.ok(cfg.authority.equals(newAuthority.publicKey), "authority rotated");
+      assert.ok(cfg.treasury.equals(newTreasury.publicKey), "treasury rotated");
+      console.log(`    rotated authority and treasury OK`);
+
+      // Rotate back to the test authority/treasury so subsequent tests still work
+      await program.methods
+        .updatePlatform(authority.publicKey, treasury.publicKey)
+        .accountsStrict({ admin: admin.publicKey, platformConfig })
+        .signers([admin])
+        .rpc();
+    });
+
+    it("non-admin cannot call updatePlatform", async () => {
+      try {
+        await program.methods
+          .updatePlatform(authority.publicKey, treasury.publicKey)
+          .accountsStrict({ admin: authority.publicKey, platformConfig })
+          .signers([authority])
+          .rpc();
+        assert.fail("Expected rejection — authority is not the admin");
+      } catch (err: any) {
+        assert.ok(err, "correctly rejected: non-admin updatePlatform");
+        console.log(`    correctly rejected: non-admin cannot update platform`);
       }
     });
   });
@@ -173,7 +226,8 @@ describe("solchess", () => {
       const e = await program.account.gameEscrow.fetch(gameEscrow);
       assert.ok(e.white.equals(white.publicKey),        "white stored");
       assert.ok(e.authority.equals(authority.publicKey),"authority = platform authority (not caller-chosen)");
-      assert.equal(e.wager.toNumber(), WAGER.toNumber());
+      assert.equal(e.wagerWhite.toNumber(), WAGER.toNumber(), "wager_white stored");
+      assert.equal(e.wagerBlack.toNumber(), 0, "wager_black empty until join");
       assert.deepEqual(e.status, { open: {} });
       assert.deepEqual(e.result, { none: {} });
 
@@ -185,7 +239,7 @@ describe("solchess", () => {
 
     it("black joins the game and locks matching wager", async () => {
       await program.methods
-        .joinGame(Array.from(gameId))
+        .joinGame(Array.from(gameId), WAGER)
         .accountsStrict({
           joiner: black.publicKey, gameEscrow, vault,
           systemProgram: SystemProgram.programId,
@@ -218,13 +272,15 @@ describe("solchess", () => {
         })
         .signers([authority]).rpc();
 
-      const total = WAGER.toNumber() * 2;
-      const fee   = Math.floor(total * FEE_WIN_BPS / BPS_DENOMINATOR);
-      const net   = total - fee;
+      const total         = WAGER.toNumber() * 2;
+      const fee           = Math.floor(total * FEE_WIN_BPS / BPS_DENOMINATOR);
+      const net           = total - fee;
+      const authorityCut  = Math.floor(fee * AUTHORITY_FEE_BPS / BPS_DENOMINATOR);
+      const treasuryCut   = fee - authorityCut;
 
       assert.equal(await conn.getBalance(white.publicKey) - whiteBefore, net, "white got net payout");
-      assert.equal(await conn.getBalance(treasury.publicKey) - treasuryBefore, fee, "treasury got fee");
-      console.log(`    net to white: ${net/LAMPORTS_PER_SOL} SOL | fee: ${fee/LAMPORTS_PER_SOL} SOL`);
+      assert.equal(await conn.getBalance(treasury.publicKey) - treasuryBefore, treasuryCut, "treasury got 90% of fee");
+      console.log(`    net to white: ${net/LAMPORTS_PER_SOL} SOL | fee: ${fee/LAMPORTS_PER_SOL} SOL (authority: ${authorityCut}, treasury: ${treasuryCut})`);
 
       const ws = await program.account.playerStats.fetch(whiteStatsPDA);
       const bs = await program.account.playerStats.fetch(blackStatsPDA);
@@ -259,7 +315,7 @@ describe("solchess", () => {
     });
 
     it("joiner fills the white slot and game goes Active", async () => {
-      await program.methods.joinGame(Array.from(gameId))
+      await program.methods.joinGame(Array.from(gameId), WAGER)
         .accountsStrict({ joiner: white.publicKey, gameEscrow, vault, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
 
@@ -287,12 +343,14 @@ describe("solchess", () => {
         })
         .signers([authority]).rpc();
 
-      const total = WAGER.toNumber() * 2;
-      const fee   = Math.floor(total * FEE_WIN_BPS / BPS_DENOMINATOR);
-      const net   = total - fee;
+      const total        = WAGER.toNumber() * 2;
+      const fee          = Math.floor(total * FEE_WIN_BPS / BPS_DENOMINATOR);
+      const net          = total - fee;
+      const authorityCut = Math.floor(fee * AUTHORITY_FEE_BPS / BPS_DENOMINATOR);
+      const treasuryCut  = fee - authorityCut;
 
       assert.equal(await conn.getBalance(black.publicKey) - blackBefore, net, "black got net payout");
-      assert.equal(await conn.getBalance(treasury.publicKey) - treasuryBefore, fee, "treasury got fee");
+      assert.equal(await conn.getBalance(treasury.publicKey) - treasuryBefore, treasuryCut, "treasury got 90% of fee");
 
       const bs = await program.account.playerStats.fetch(blackStatsPDA);
       assert.equal(bs.gamesWon, 1, "black stats: 1 win");
@@ -317,7 +375,7 @@ describe("solchess", () => {
       await program.methods.createGame(Array.from(gameId), WAGER, true)
         .accountsStrict({ creator: white.publicKey, gameEscrow, vault, platformConfig, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
-      await program.methods.joinGame(Array.from(gameId))
+      await program.methods.joinGame(Array.from(gameId), WAGER)
         .accountsStrict({ joiner: black.publicKey, gameEscrow, vault, systemProgram: SystemProgram.programId })
         .signers([black]).rpc();
     });
@@ -386,7 +444,7 @@ describe("solchess", () => {
       await program.methods.createGame(Array.from(gameId), WAGER, true)
         .accountsStrict({ creator: white.publicKey, gameEscrow, vault, platformConfig, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
-      await program.methods.joinGame(Array.from(gameId))
+      await program.methods.joinGame(Array.from(gameId), WAGER)
         .accountsStrict({ joiner: black.publicKey, gameEscrow, vault, systemProgram: SystemProgram.programId })
         .signers([black]).rpc();
       await program.methods.openStakes(Array.from(gameId), 300)
@@ -514,7 +572,7 @@ describe("solchess", () => {
       await program.methods.createGame(Array.from(gameId), WAGER, true)
         .accountsStrict({ creator: white.publicKey, gameEscrow, vault, platformConfig, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
-      await program.methods.joinGame(Array.from(gameId))
+      await program.methods.joinGame(Array.from(gameId), WAGER)
         .accountsStrict({ joiner: black.publicKey, gameEscrow, vault, systemProgram: SystemProgram.programId })
         .signers([black]).rpc();
       await program.methods.openStakes(Array.from(gameId), 300)
@@ -590,7 +648,7 @@ describe("solchess", () => {
       await program.methods.createGame(Array.from(gameId), WAGER, true)
         .accountsStrict({ creator: white.publicKey, gameEscrow, vault, platformConfig, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
-      await program.methods.joinGame(Array.from(gameId))
+      await program.methods.joinGame(Array.from(gameId), WAGER)
         .accountsStrict({ joiner: black.publicKey, gameEscrow, vault, systemProgram: SystemProgram.programId })
         .signers([black]).rpc();
       await program.methods.openStakes(Array.from(gameId), 300)
@@ -648,7 +706,7 @@ describe("solchess", () => {
       await program.methods.createGame(Array.from(gId), new BN(50_000_000), true)
         .accountsStrict({ creator: white.publicKey, gameEscrow: ge, vault: v, platformConfig, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
-      await program.methods.joinGame(Array.from(gId))
+      await program.methods.joinGame(Array.from(gId), new BN(50_000_000))
         .accountsStrict({ joiner: black.publicKey, gameEscrow: ge, vault: v, systemProgram: SystemProgram.programId })
         .signers([black]).rpc();
       await program.methods.openStakes(Array.from(gId), 300)
@@ -713,7 +771,7 @@ describe("solchess", () => {
       await program.methods.createGame(Array.from(gId), new BN(50_000_000), true)
         .accountsStrict({ creator: white.publicKey, gameEscrow: ge, vault: v, platformConfig, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
-      await program.methods.joinGame(Array.from(gId))
+      await program.methods.joinGame(Array.from(gId), new BN(50_000_000))
         .accountsStrict({ joiner: black.publicKey, gameEscrow: ge, vault: v, systemProgram: SystemProgram.programId })
         .signers([black]).rpc();
       await program.methods.openStakes(Array.from(gId), 300)
@@ -774,7 +832,7 @@ describe("solchess", () => {
 
       try {
         // White tries to join their own game as black
-        await program.methods.joinGame(Array.from(gId))
+        await program.methods.joinGame(Array.from(gId), new BN(50_000_000))
           .accountsStrict({ joiner: white.publicKey, gameEscrow: ge, vault: v, systemProgram: SystemProgram.programId })
           .signers([white]).rpc();
         assert.fail("Should have been rejected — self-match");
@@ -792,7 +850,7 @@ describe("solchess", () => {
       await program.methods.createGame(Array.from(gId), new BN(50_000_000), true)
         .accountsStrict({ creator: white.publicKey, gameEscrow: ge, vault: v, platformConfig, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
-      await program.methods.joinGame(Array.from(gId))
+      await program.methods.joinGame(Array.from(gId), new BN(50_000_000))
         .accountsStrict({ joiner: black.publicKey, gameEscrow: ge, vault: v, systemProgram: SystemProgram.programId })
         .signers([black]).rpc();
       await program.methods.openStakes(Array.from(gId), 300)
@@ -823,7 +881,7 @@ describe("solchess", () => {
       await program.methods.createGame(Array.from(gId), new BN(50_000_000), true)
         .accountsStrict({ creator: white.publicKey, gameEscrow: ge, vault: v, platformConfig, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
-      await program.methods.joinGame(Array.from(gId))
+      await program.methods.joinGame(Array.from(gId), new BN(50_000_000))
         .accountsStrict({ joiner: black.publicKey, gameEscrow: ge, vault: v, systemProgram: SystemProgram.programId })
         .signers([black]).rpc();
       await program.methods.openStakes(Array.from(gId), 300)
@@ -850,7 +908,7 @@ describe("solchess", () => {
       await program.methods.createGame(Array.from(gId), new BN(50_000_000), true)
         .accountsStrict({ creator: white.publicKey, gameEscrow: ge, vault: v, platformConfig, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
-      await program.methods.joinGame(Array.from(gId))
+      await program.methods.joinGame(Array.from(gId), new BN(50_000_000))
         .accountsStrict({ joiner: black.publicKey, gameEscrow: ge, vault: v, systemProgram: SystemProgram.programId })
         .signers([black]).rpc();
 
@@ -903,7 +961,7 @@ describe("solchess", () => {
       await program.methods.createGame(Array.from(gId), new BN(50_000_000), true)
         .accountsStrict({ creator: white.publicKey, gameEscrow: ge, vault: v, platformConfig, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
-      await program.methods.joinGame(Array.from(gId))
+      await program.methods.joinGame(Array.from(gId), new BN(50_000_000))
         .accountsStrict({ joiner: black.publicKey, gameEscrow: ge, vault: v, systemProgram: SystemProgram.programId })
         .signers([black]).rpc();
       await program.methods.settleGame(Array.from(gId), { black: {} })
@@ -932,7 +990,7 @@ describe("solchess", () => {
       await program.methods.createGame(Array.from(gId), new BN(50_000_000), true)
         .accountsStrict({ creator: white.publicKey, gameEscrow: ge, vault: v, platformConfig, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
-      await program.methods.joinGame(Array.from(gId))
+      await program.methods.joinGame(Array.from(gId), new BN(50_000_000))
         .accountsStrict({ joiner: black.publicKey, gameEscrow: ge, vault: v, systemProgram: SystemProgram.programId })
         .signers([black]).rpc();
 
@@ -955,7 +1013,7 @@ describe("solchess", () => {
       await program.methods.createGame(Array.from(gId), new BN(50_000_000), true)
         .accountsStrict({ creator: white.publicKey, gameEscrow: ge, vault: v, platformConfig, systemProgram: SystemProgram.programId })
         .signers([white]).rpc();
-      await program.methods.joinGame(Array.from(gId))
+      await program.methods.joinGame(Array.from(gId), new BN(50_000_000))
         .accountsStrict({ joiner: black.publicKey, gameEscrow: ge, vault: v, systemProgram: SystemProgram.programId })
         .signers([black]).rpc();
       await program.methods.openStakes(Array.from(gId), 300)

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import Modal from '../ui/Modal'
 import { api } from '../../lib/apiClient'
 import { useAuthStore } from '../../stores/authStore'
+import { useAnchorWallet } from '@solana/wallet-adapter-react'
+import { createEscrow } from '../../lib/anchorProgram'
 
 type Mode = 'create' | 'host'
 
@@ -11,6 +13,8 @@ interface CreateModalProps {
   mode: Mode
   onClose: () => void
 }
+
+const WAGER_CHIPS = [0.01, 0.05, 0.1, 0.25, 0.5, 1]
 
 const TIME_OPTIONS = [
   { label: 'No timer', value: null },
@@ -30,14 +34,17 @@ const COLORS = [
 type Step = 'config' | 'created'
 
 export default function CreateModal({ open, mode, onClose }: CreateModalProps) {
-  const navigate  = useNavigate()
-  const { status } = useAuthStore()
-  const isAuth    = status === 'authenticated'
-  const isHost    = mode === 'host'
+  const navigate    = useNavigate()
+  const { status }  = useAuthStore()
+  const anchorWallet = useAnchorWallet()
+  const isAuth      = status === 'authenticated'
+  const isHost      = mode === 'host'
 
   const [step,        setStep]        = useState<Step>('config')
   const [timeControl, setTimeControl] = useState<number | null>(300)
   const [color,       setColor]       = useState<'white' | 'black' | 'random'>('white')
+  const [wager,       setWager]       = useState<number | null>(null)
+  const [customWager, setCustomWager] = useState('')
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState<string | null>(null)
   const [gameCode,    setGameCode]    = useState('')
@@ -47,20 +54,58 @@ export default function CreateModal({ open, mode, onClose }: CreateModalProps) {
 
   const accentColor = isHost ? '#14F195' : '#9945FF'
 
+  function resolvedWager(): number {
+    if (customWager) return parseFloat(customWager) || 0
+    return wager ?? 0
+  }
+
   async function handleCreate() {
     if (!isAuth) return
+    const wagerSol = resolvedWager()
+    if (!isHost && wagerSol === 0) {
+      setError('Set a wager to create a game')
+      return
+    }
+    if (wagerSol < 0.01) {
+      setError('Minimum wager is 0.01 SOL')
+      return
+    }
+    if (!anchorWallet) {
+      setError('Connect a Solana wallet to play with a wager')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
       const resolvedColor = (!isHost && color === 'random')
         ? (Math.random() < 0.5 ? 'white' : 'black')
-        : (isHost ? 'white' : color)   // color ignored for hosted games
-      const res = await api.post<{ gameId: string; code: string }>('/api/v1/games', {
+        : (isHost ? 'white' : color)
+
+      // Step 1: lock wager on-chain BEFORE touching the backend.
+      // If the user rejects or the tx fails, nothing gets created anywhere.
+      let onChainGameId: string | null = null
+      if (wagerSol > 0 && anchorWallet) {
+        // Generate a stable ID client-side so the on-chain PDA seeds and the DB record share the same key.
+        onChainGameId = crypto.randomUUID()
+        try {
+          await createEscrow(anchorWallet, onChainGameId, resolvedWager(), resolvedColor === 'white')
+        } catch (e: unknown) {
+          setError(`Transaction rejected: ${e instanceof Error ? e.message : 'escrow failed'}. No game was created.`)
+          setLoading(false)
+          return
+        }
+      }
+
+      // Step 2: escrow confirmed (or no wager) — now create the backend record
+      const res = await api.post<{ gameId: string; code: string; wager: number }>('/api/v1/games', {
         timeControl,
         isPractice: false,
         isHosted: isHost,
         creatorColor: resolvedColor,
+        wager: resolvedWager(),
+        ...(onChainGameId ? { gameId: onChainGameId } : {}),
       })
+
       setGameCode(res.code)
       setGameId(res.gameId)
       setStep('created')
@@ -91,6 +136,8 @@ export default function CreateModal({ open, mode, onClose }: CreateModalProps) {
   function handleClose() {
     setStep('config')
     setError(null)
+    setWager(null)
+    setCustomWager('')
     setCodeCopied(false)
     setLinkCopied(false)
     onClose()
@@ -188,17 +235,50 @@ export default function CreateModal({ open, mode, onClose }: CreateModalProps) {
             </div>
           </div>
 
-          {/* Wager placeholder */}
-          <div
-            className="flex items-center justify-between px-4 py-3"
-            style={{ background: '#0a0a0f', border: '1px dashed #2a2a3a', opacity: 0.5 }}
-          >
-            <div>
-              <p className="text-xs font-semibold text-white">Wager</p>
-              <p className="text-[10px] mt-0.5" style={{ color: '#8888aa' }}>On-chain escrow · coming soon</p>
+          {/* Wager — on-chain escrow */}
+          {!isHost && (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8888aa' }}>
+                Your Wager
+              </p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {WAGER_CHIPS.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => { setWager(c); setCustomWager(''); setError(null) }}
+                    className="py-2 text-xs font-bold transition-all"
+                    style={{
+                      background: wager === c && !customWager ? `${accentColor}18` : '#0a0a0f',
+                      border: `1.5px solid ${wager === c && !customWager ? accentColor : '#2a2a3a'}`,
+                      color: wager === c && !customWager ? accentColor : '#ffffff',
+                    }}
+                  >
+                    {c} SOL
+                  </button>
+                ))}
+              </div>
+              {/* Custom amount */}
+              <div
+                className="flex items-center overflow-hidden"
+                style={{ border: `1.5px solid ${customWager ? accentColor : '#2a2a3a'}`, background: '#0a0a0f' }}
+              >
+                <span className="pl-3 text-[10px] font-semibold" style={{ color: '#8888aa' }}>SOL</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={customWager}
+                  onChange={e => { setCustomWager(e.target.value); setWager(null); setError(null) }}
+                  placeholder="Custom amount"
+                  className="flex-1 px-3 py-2.5 text-sm font-mono font-bold bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  style={{ color: '#FFD700' }}
+                />
+              </div>
+              <p className="text-[10px]" style={{ color: '#555577' }}>
+                Each player sets their own amount. Winner takes the full pot minus 3% fee.
+              </p>
             </div>
-            <span className="text-xs font-bold" style={{ color: '#FFD700' }}>— SOL</span>
-          </div>
+          )}
 
           {error && <p className="text-xs" style={{ color: '#FF3B30' }}>{error}</p>}
 
@@ -206,7 +286,7 @@ export default function CreateModal({ open, mode, onClose }: CreateModalProps) {
             <div className="absolute w-full h-full" style={{ top: 4, left: 4, background: accentColor }} />
             <button
               onClick={handleCreate}
-              disabled={loading || !isAuth}
+              disabled={loading || !isAuth || (!isHost && resolvedWager() === 0)}
               className="relative w-full py-3 font-bold text-sm uppercase tracking-widest transition-transform duration-75 active:translate-x-1 active:translate-y-1 disabled:opacity-60"
               style={{ background: '#13131a', border: `1.5px solid ${accentColor}`, color: accentColor }}
             >

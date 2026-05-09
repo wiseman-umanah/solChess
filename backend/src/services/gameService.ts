@@ -2,6 +2,14 @@ import { Chess } from 'chess.js'
 import prisma from '../db/prisma.js'
 import type { Server } from 'socket.io'
 import { getIo } from '../socket/io.js'
+import {
+  settleGameOnChain,
+  settleStakesOnChain,
+  sweepStakeVaultOnChain,
+  openStakesOnChain,
+  fetchStakePool,
+  gameIdToBytes,
+} from '../anchor/client.js'
 
 export async function broadcastGameList(io?: Server) {
   const emitter = io ?? getIo()
@@ -49,6 +57,15 @@ export function getBothConnected(gameId: string, whiteWallet: string, blackWalle
   return !!(room?.has(whiteWallet) && room?.has(blackWallet))
 }
 
+// ── Stake window ──────────────────────────────────────────────────────────────
+
+function stakeWindow(timeControl: number | null): number {
+  if (timeControl === null) return 120 // no timer — 2 min window
+  if (timeControl < 180) return 30     // bullet — 30 s
+  if (timeControl < 600) return 90     // blitz  — 90 s
+  return 180                           // longer — 3 min
+}
+
 // ── Code generation ───────────────────────────────────────────────────────────
 
 function randomCode(): string {
@@ -64,6 +81,8 @@ export async function createGame(
   isPractice = false,
   creatorColor: 'white' | 'black' = 'white',
   isHosted = false,
+  wager = 0,
+  id?: string,
 ) {
   let code = randomCode()
   while (await prisma.game.findUnique({ where: { code } })) code = randomCode()
@@ -76,6 +95,7 @@ export async function createGame(
 
   const game = await prisma.game.create({
     data: {
+      ...(id ? { id } : {}),
       code,
       whiteWallet,
       blackWallet: blackWallet ?? undefined,
@@ -84,6 +104,7 @@ export async function createGame(
       isHosted,
       hostWallet,
       creatorColor: isHosted ? 'host' : creatorColor,
+      wager,
     },
     include: { white: true, black: true },
   })
@@ -120,6 +141,15 @@ export async function joinGame(gameId: string, joinerWallet: string) {
   })
 
   if (!existing.isPractice) await broadcastGameList()
+
+  // Open stake window on-chain as soon as both players are present
+  if (newStatus === 'ACTIVE' && existing.wager > 0) {
+    const window = stakeWindow(existing.timeControl)
+    openStakesOnChain(game.id, window).catch(e =>
+      console.error('[anchor] openStakes failed:', e)
+    )
+  }
+
   return game
 }
 
@@ -315,6 +345,29 @@ export async function endGame(
   })
   // Don't affect stats for practice games
   if (!isPractice) await updateStats(game.whiteWallet, game.blackWallet, winner)
+
+  // Settle on-chain for wager games
+  if (!isPractice && game.wager > 0 && game.whiteWallet && game.blackWallet) {
+    try {
+      await settleGameOnChain(gameId, game.whiteWallet, game.blackWallet, winner)
+      await settleStakesOnChain(gameId)
+
+      // Sweep vault to treasury if winning side had no stakers
+      const pool = await fetchStakePool(gameIdToBytes(gameId))
+      if (pool) {
+        const winningSideTotal: { toNumber(): number } =
+          winner === 'white' ? pool.totalWhite
+          : winner === 'black' ? pool.totalBlack
+          : pool.totalDraw
+        if (winningSideTotal.toNumber() === 0) {
+          await sweepStakeVaultOnChain(gameId)
+        }
+      }
+    } catch (e) {
+      console.error('[anchor] settlement failed for game', gameId, e)
+    }
+  }
+
   io.to(gameId).emit('game-end', { winner, reason })
   return game
 }

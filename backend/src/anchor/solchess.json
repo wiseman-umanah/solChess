@@ -1,0 +1,1828 @@
+{
+  "address": "HCVLAPtDATPRCsGAHbFJKBmahQsjLK9QehXLna12c7NT",
+  "metadata": {
+    "name": "solchess",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "claim_abandoned",
+      "discriminator": [
+        196,
+        89,
+        31,
+        208,
+        107,
+        161,
+        149,
+        60
+      ],
+      "accounts": [
+        {
+          "name": "white",
+          "docs": [
+            "Must be the white player (creator)"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "game_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "claim_stake_winnings",
+      "discriminator": [
+        11,
+        245,
+        169,
+        210,
+        155,
+        106,
+        18,
+        226
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "stake_pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Stake pool vault — PDA signs the payout"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "platform_config",
+          "docs": [
+            "Global platform config — treasury is read from here"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury — must match platform_config.treasury"
+          ],
+          "writable": true
+        },
+        {
+          "name": "player_stats",
+          "docs": [
+            "User's PlayerStats — updated with staking earnings"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "game_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create_game",
+      "discriminator": [
+        124,
+        69,
+        75,
+        66,
+        184,
+        220,
+        72,
+        206
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "docs": [
+            "The game creator — signs and pays wager + rent.",
+            "They can be assigned as white or black depending on creator_is_white."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "platform_config",
+          "docs": [
+            "Global platform config — authority and treasury read from here"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "game_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "wager",
+          "type": "u64"
+        },
+        {
+          "name": "creator_is_white",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "init_platform",
+      "docs": [
+        "Initialise the global platform config — sets the settlement authority",
+        "and the treasury wallet.  Can only be called once."
+      ],
+      "discriminator": [
+        29,
+        22,
+        210,
+        225,
+        219,
+        114,
+        193,
+        169
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "The wallet calling this — becomes the admin.",
+            "Can only be called once (init will fail if the PDA already exists)."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "platform_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "treasury",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "join_game",
+      "discriminator": [
+        107,
+        112,
+        18,
+        38,
+        56,
+        173,
+        60,
+        128
+      ],
+      "accounts": [
+        {
+          "name": "joiner",
+          "docs": [
+            "The joining player — signs and pays the matching wager.",
+            "They fill whichever colour slot the creator left empty."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "game_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "joiner_wager",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "open_stakes",
+      "discriminator": [
+        183,
+        79,
+        129,
+        117,
+        82,
+        233,
+        152,
+        137
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Authority that opened the game — same keypair that can settle it"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game_escrow",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "game_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "window_seconds",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "place_stake",
+      "discriminator": [
+        22,
+        66,
+        171,
+        110,
+        117,
+        28,
+        158,
+        57
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game_escrow",
+          "docs": [
+            "Read game_escrow to guard against post-result staking and player self-staking.",
+            "Players cannot stake on their own game — they have insider information."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_position",
+          "docs": [
+            "One StakePosition per (user, game) — a user can stake once per game"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The stake pool's vault"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "game_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "side",
+          "type": {
+            "defined": {
+              "name": "StakeSide"
+            }
+          }
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "settle_game",
+      "discriminator": [
+        96,
+        54,
+        24,
+        189,
+        239,
+        198,
+        86,
+        29
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Must match game_escrow.authority"
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "game_escrow"
+          ]
+        },
+        {
+          "name": "game_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "white_wallet",
+          "docs": [
+            "White player's wallet to receive payout"
+          ],
+          "writable": true
+        },
+        {
+          "name": "black_wallet",
+          "docs": [
+            "Black player's wallet to receive payout"
+          ],
+          "writable": true
+        },
+        {
+          "name": "platform_config",
+          "docs": [
+            "Global platform config — treasury is read from here"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury wallet — must match platform_config.treasury"
+          ],
+          "writable": true
+        },
+        {
+          "name": "white_stats",
+          "docs": [
+            "White's PlayerStats PDA — init if it doesn't exist yet"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game_escrow.white",
+                "account": "GameEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "black_stats",
+          "docs": [
+            "Black's PlayerStats PDA — init if it doesn't exist yet"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game_escrow.black",
+                "account": "GameEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "game_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "result",
+          "type": {
+            "defined": {
+              "name": "GameResult"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "settle_stakes",
+      "discriminator": [
+        78,
+        170,
+        60,
+        233,
+        48,
+        236,
+        110,
+        215
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game_escrow",
+          "docs": [
+            "Game must already be settled before stakes can be settled"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "game_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "sweep_stake_vault",
+      "docs": [
+        "Sweeps vault when nobody staked the winning side — platform takes all.",
+        "Blocked if any winning stake exists (those claimants must be paid first)."
+      ],
+      "discriminator": [
+        133,
+        32,
+        118,
+        36,
+        61,
+        183,
+        208,
+        92
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Must be the platform authority"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "platform_config",
+          "docs": [
+            "Global platform config — authority and treasury are validated here"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The stake vault PDA holding all remaining SOL"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "game_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury — must match platform_config.treasury"
+          ],
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "game_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_platform",
+      "docs": [
+        "Rotate the authority and/or treasury addresses.",
+        "Only callable by the original admin wallet that ran init_platform."
+      ],
+      "discriminator": [
+        46,
+        78,
+        138,
+        189,
+        47,
+        163,
+        120,
+        85
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Must be the original admin that called init_platform.",
+            "Only the admin key stored on-chain can rotate authority or treasury."
+          ],
+          "signer": true
+        },
+        {
+          "name": "platform_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_authority",
+          "type": {
+            "option": "pubkey"
+          }
+        },
+        {
+          "name": "new_treasury",
+          "type": {
+            "option": "pubkey"
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "GameEscrow",
+      "discriminator": [
+        37,
+        195,
+        2,
+        234,
+        81,
+        128,
+        248,
+        133
+      ]
+    },
+    {
+      "name": "PlatformConfig",
+      "discriminator": [
+        160,
+        78,
+        128,
+        0,
+        248,
+        83,
+        230,
+        160
+      ]
+    },
+    {
+      "name": "PlayerStats",
+      "discriminator": [
+        169,
+        146,
+        242,
+        176,
+        102,
+        118,
+        231,
+        172
+      ]
+    },
+    {
+      "name": "StakePool",
+      "discriminator": [
+        121,
+        34,
+        206,
+        21,
+        79,
+        127,
+        255,
+        28
+      ]
+    },
+    {
+      "name": "StakePosition",
+      "discriminator": [
+        78,
+        165,
+        30,
+        111,
+        171,
+        125,
+        11,
+        220
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidGameStatus",
+      "msg": "Game is not in the expected status for this action"
+    },
+    {
+      "code": 6001,
+      "name": "NotAPlayer",
+      "msg": "You are not a participant in this game"
+    },
+    {
+      "code": 6002,
+      "name": "PlayerCannotStake",
+      "msg": "Players cannot stake on their own game"
+    },
+    {
+      "code": 6003,
+      "name": "SelfMatchNotAllowed",
+      "msg": "You cannot join a game you created"
+    },
+    {
+      "code": 6004,
+      "name": "NotYourTurn",
+      "msg": "It is not your turn"
+    },
+    {
+      "code": 6005,
+      "name": "WagerTooSmall",
+      "msg": "Wager amount is below the minimum allowed"
+    },
+    {
+      "code": 6006,
+      "name": "GameAlreadyFull",
+      "msg": "The game has already been joined"
+    },
+    {
+      "code": 6007,
+      "name": "AbandonTooEarly",
+      "msg": "Game cannot be abandoned yet — timeout has not elapsed"
+    },
+    {
+      "code": 6008,
+      "name": "UnauthorizedSettle",
+      "msg": "Only the game authority can settle this game"
+    },
+    {
+      "code": 6009,
+      "name": "UnauthorizedAdmin",
+      "msg": "Only the platform admin can perform this action"
+    },
+    {
+      "code": 6010,
+      "name": "StakeTooSmall",
+      "msg": "Stake amount is below the minimum allowed"
+    },
+    {
+      "code": 6011,
+      "name": "StakesNotOpen",
+      "msg": "Stakes are not open for this game"
+    },
+    {
+      "code": 6012,
+      "name": "StakesAlreadyClosed",
+      "msg": "Stakes have already been closed for this game"
+    },
+    {
+      "code": 6013,
+      "name": "StakesAlreadySettled",
+      "msg": "Stakes have already been settled"
+    },
+    {
+      "code": 6014,
+      "name": "AlreadyClaimed",
+      "msg": "This stake position has already been claimed"
+    },
+    {
+      "code": 6015,
+      "name": "WinnersStillClaimable",
+      "msg": "Cannot sweep vault — winning stakers can still claim their payouts"
+    },
+    {
+      "code": 6016,
+      "name": "DidNotWin",
+      "msg": "You did not stake on the winning side"
+    },
+    {
+      "code": 6017,
+      "name": "InvalidSide",
+      "msg": "Invalid side — must be white, black, or draw"
+    },
+    {
+      "code": 6018,
+      "name": "Overflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6019,
+      "name": "Underflow",
+      "msg": "Arithmetic underflow"
+    },
+    {
+      "code": 6020,
+      "name": "DivisionByZero",
+      "msg": "Division by zero"
+    }
+  ],
+  "types": [
+    {
+      "name": "GameEscrow",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "game_id",
+            "docs": [
+              "The backend-generated game ID (32-byte UUID stored as bytes)"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "white",
+            "docs": [
+              "White player's wallet"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "black",
+            "docs": [
+              "Black player's wallet (zero pubkey until someone joins)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "wager_white",
+            "docs": [
+              "Wager locked in by white (lamports)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "wager_black",
+            "docs": [
+              "Wager locked in by black (lamports)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "vault",
+            "docs": [
+              "PDA vault that holds the locked SOL"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "vault_bump",
+            "docs": [
+              "Vault bump for signing CPIs"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Current game lifecycle status"
+            ],
+            "type": {
+              "defined": {
+                "name": "GameStatus"
+              }
+            }
+          },
+          {
+            "name": "result",
+            "docs": [
+              "Final result — only set during settle_game"
+            ],
+            "type": {
+              "defined": {
+                "name": "GameResult"
+              }
+            }
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "Backend authority that is allowed to call settle_game"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "created_at",
+            "docs": [
+              "Unix timestamp of game creation"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "settled_at",
+            "docs": [
+              "Unix timestamp of settlement (0 until settled)"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump for this PDA"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GameResult",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "None"
+          },
+          {
+            "name": "White"
+          },
+          {
+            "name": "Black"
+          },
+          {
+            "name": "Draw"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GameStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Settled"
+          },
+          {
+            "name": "Abandoned"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlatformConfig",
+      "docs": [
+        "Global platform configuration — initialised once at deploy time.",
+        "Stores the two privileged addresses so no instruction can spoof them."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "docs": [
+              "Admin wallet — the only key allowed to call init_platform"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "Backend authority — settles games, opens / settles stake pools"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "docs": [
+              "Treasury wallet — receives all platform fees"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlayerStats",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "docs": [
+              "The player this account tracks"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "games_played",
+            "docs": [
+              "Total games played (as white or black)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "games_won",
+            "docs": [
+              "Total games won"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "games_drawn",
+            "docs": [
+              "Total games drawn"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "total_wagered",
+            "docs": [
+              "Total SOL wagered across all games (lamports)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_received",
+            "docs": [
+              "Total SOL received from game settlements (lamports)",
+              "Net earnings = total_received - total_wagered"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "staking_earned",
+            "docs": [
+              "Total SOL earned from spectator staking wins (lamports, profit only)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump for this PDA"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StakePool",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "game_id",
+            "docs": [
+              "Links back to the game"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "total_white",
+            "docs": [
+              "Total SOL staked on white (lamports)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_black",
+            "docs": [
+              "Total SOL staked on black (lamports)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_draw",
+            "docs": [
+              "Total SOL staked on draw (lamports)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "closes_at",
+            "docs": [
+              "Unix timestamp after which no new stakes are accepted (0 = not yet opened)"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "settled",
+            "docs": [
+              "Whether the pool has been settled and payouts are claimable"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "vault_swept",
+            "docs": [
+              "Whether the authority has already swept the vault remainder to treasury"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "result",
+            "docs": [
+              "Result copied from GameEscrow at settlement time"
+            ],
+            "type": {
+              "defined": {
+                "name": "GameResult"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump for this PDA"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StakePosition",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "docs": [
+              "The staker's wallet"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "game_id",
+            "docs": [
+              "The game this position belongs to"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "side",
+            "docs": [
+              "Which outcome they staked on"
+            ],
+            "type": {
+              "defined": {
+                "name": "StakeSide"
+              }
+            }
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Amount staked (lamports)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "claimed",
+            "docs": [
+              "Whether this position has been claimed already (prevents double-claim)"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump for this PDA"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StakeSide",
+      "docs": [
+        "Which side a spectator staked on"
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "White"
+          },
+          {
+            "name": "Black"
+          },
+          {
+            "name": "Draw"
+          }
+        ]
+      }
+    }
+  ]
+}

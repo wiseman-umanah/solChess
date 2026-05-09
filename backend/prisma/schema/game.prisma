@@ -10,6 +10,7 @@ model Game {
   isHosted     Boolean     @default(false)  // host is spectator-only; two external players join
   hostWallet   String?                      // wallet of the host (non-player spectator)
   creatorColor String      @default("white") // 'white' | 'black' | 'host'
+  wager        Float       @default(0)      // SOL; 0 = no on-chain escrow
   prizePool    Float       @default(0)
   stakesWhite  Float       @default(0)
   stakesBlack  Float       @default(0)

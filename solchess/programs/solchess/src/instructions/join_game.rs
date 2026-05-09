@@ -29,7 +29,9 @@ pub struct JoinGame<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub(crate) fn handler(ctx: Context<JoinGame>, _game_id: [u8; 32]) -> Result<()> {
+pub(crate) fn handler(ctx: Context<JoinGame>, _game_id: [u8; 32], joiner_wager: u64) -> Result<()> {
+    require!(joiner_wager >= MIN_WAGER_LAMPORTS, SolChessError::WagerTooSmall);
+
     let escrow = &mut ctx.accounts.game_escrow;
     let joiner = ctx.accounts.joiner.key();
 
@@ -42,11 +44,13 @@ pub(crate) fn handler(ctx: Context<JoinGame>, _game_id: [u8; 32]) -> Result<()> 
     // Prevent self-match: joiner cannot be the same wallet as the creator
     require!(joiner != creator, SolChessError::SelfMatchNotAllowed);
 
-    // Fill the empty colour slot
+    // Fill the empty colour slot and record this player's wager
     if white_empty {
-        escrow.white = joiner;
+        escrow.white       = joiner;
+        escrow.wager_white = joiner_wager;
     } else {
-        escrow.black = joiner;
+        escrow.black       = joiner;
+        escrow.wager_black = joiner_wager;
     }
 
     escrow.status = GameStatus::Active;
@@ -59,7 +63,7 @@ pub(crate) fn handler(ctx: Context<JoinGame>, _game_id: [u8; 32]) -> Result<()> 
                 to:   ctx.accounts.vault.to_account_info(),
             },
         ),
-        escrow.wager,
+        joiner_wager,
     )?;
 
     Ok(())

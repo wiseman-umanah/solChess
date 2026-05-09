@@ -1,4 +1,5 @@
 pub mod init_platform;
+pub mod update_platform;
 pub mod create_game;
 pub mod join_game;
 pub mod settle_game;

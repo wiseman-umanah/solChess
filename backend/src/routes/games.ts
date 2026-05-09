@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth.js'
 import prisma from '../db/prisma.js'
 import { createGame, joinGame, joinByCode } from '../services/gameService.js'
+import { getIo } from '../socket/io.js'
 
 const gameInclude = {
   white: { select: { wallet: true, username: true, trustScore: true, stats: true } },
@@ -55,21 +56,24 @@ export default async function gameRoutes(app: FastifyInstance) {
       isPractice?: boolean
       isHosted?: boolean
       creatorColor?: 'white' | 'black'
+      wager?: number
+      gameId?: string
     }
   }>(
     '/games',
     { preHandler: requireAuth },
     async (req, reply) => {
       const { wallet } = req.user as { wallet: string }
-      const { timeControl = 300, isPractice = false, isHosted = false, creatorColor = 'white' } = req.body
+      const { timeControl = 300, isPractice = false, isHosted = false, creatorColor = 'white', wager = 0, gameId } = req.body
 
       if (!isHosted && !isPractice && creatorColor && !['white', 'black'].includes(creatorColor)) {
         return reply.status(400).send({ error: 'Invalid color' })
       }
+      if (wager < 0) return reply.status(400).send({ error: 'Wager cannot be negative' })
 
       const tc = timeControl === null || timeControl === 0 ? null : (timeControl ?? 300)
-      const game = await createGame(wallet, tc, isPractice, creatorColor, isHosted)
-      return { gameId: game.id, code: game.code, game }
+      const game = await createGame(wallet, tc, isPractice, creatorColor, isHosted, wager, gameId)
+      return { gameId: game.id, code: game.code, wager: game.wager, game }
     },
   )
 
@@ -113,6 +117,10 @@ export default async function gameRoutes(app: FastifyInstance) {
           stakesBlack: side === 'black' ? { increment: amount } : undefined,
         },
       })
+      getIo().to(game.id).emit('stake-update', {
+        stakesWhite: updated.stakesWhite,
+        stakesBlack: updated.stakesBlack,
+      })
       return { stakesWhite: updated.stakesWhite, stakesBlack: updated.stakesBlack }
     },
   )
@@ -135,6 +143,7 @@ export default async function gameRoutes(app: FastifyInstance) {
         where: { id: game.id },
         data: { prizePool: { increment: amount } },
       })
+      getIo().to(game.id).emit('prize-pool-update', { prizePool: updated.prizePool })
       return { prizePool: updated.prizePool }
     },
   )

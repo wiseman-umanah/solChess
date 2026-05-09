@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
-use crate::constants::*;
+use crate::constants::{*, AUTHORITY_FEE_BPS};
 use crate::errors::SolChessError;
 use crate::state::{GameEscrow, GameStatus, GameResult, PlayerStats, PlatformConfig};
 
@@ -76,8 +76,8 @@ pub(crate) fn handler(
     let escrow = &mut ctx.accounts.game_escrow;
     require!(escrow.status == GameStatus::Active, SolChessError::InvalidGameStatus);
 
-    let total_vault = escrow.wager
-        .checked_mul(2)
+    let total_vault = escrow.wager_white
+        .checked_add(escrow.wager_black)
         .ok_or(SolChessError::Overflow)?;
 
     // ── Platform fee ──────────────────────────────────────────────────────────
@@ -164,7 +164,30 @@ pub(crate) fn handler(
         GameResult::None => return err!(SolChessError::InvalidGameStatus),
     }
 
-    // ── Fee to treasury ───────────────────────────────────────────────────────
+    // ── Fee split: 10% to authority (gas top-up), 90% to treasury ────────────
+    let authority_cut = fee
+        .checked_mul(AUTHORITY_FEE_BPS)
+        .ok_or(SolChessError::Overflow)?
+        .checked_div(BPS_DENOMINATOR)
+        .ok_or(SolChessError::DivisionByZero)?;
+    let treasury_cut = fee
+        .checked_sub(authority_cut)
+        .ok_or(SolChessError::Underflow)?;
+
+    // Authority cut — keeps the hot wallet topped up for future settlements
+    system_program::transfer(
+        CpiContext::new_with_signer(
+            ctx.accounts.system_program.to_account_info(),
+            system_program::Transfer {
+                from: ctx.accounts.vault.to_account_info(),
+                to:   ctx.accounts.authority.to_account_info(),
+            },
+            seeds,
+        ),
+        authority_cut,
+    )?;
+
+    // Treasury cut — main profit wallet
     system_program::transfer(
         CpiContext::new_with_signer(
             ctx.accounts.system_program.to_account_info(),
@@ -174,7 +197,7 @@ pub(crate) fn handler(
             },
             seeds,
         ),
-        fee,
+        treasury_cut,
     )?;
 
     // ── Update PlayerStats ────────────────────────────────────────────────────
@@ -193,8 +216,8 @@ pub(crate) fn handler(
 
     ws.games_played = ws.games_played.saturating_add(1);
     bs.games_played = bs.games_played.saturating_add(1);
-    ws.total_wagered = ws.total_wagered.saturating_add(escrow.wager);
-    bs.total_wagered = bs.total_wagered.saturating_add(escrow.wager);
+    ws.total_wagered = ws.total_wagered.saturating_add(escrow.wager_white);
+    bs.total_wagered = bs.total_wagered.saturating_add(escrow.wager_black);
 
     match result {
         GameResult::White => {

@@ -6,6 +6,7 @@ pub mod state;
 pub mod instructions;
 
 pub use instructions::init_platform::*;
+pub use instructions::update_platform::*;
 pub use instructions::create_game::*;
 pub use instructions::join_game::*;
 pub use instructions::settle_game::*;
@@ -37,6 +38,16 @@ pub mod solchess {
         instructions::init_platform::handler(ctx, authority, treasury)
     }
 
+    /// Rotate the authority and/or treasury addresses.
+    /// Only callable by the original admin wallet that ran init_platform.
+    pub fn update_platform(
+        ctx: Context<UpdatePlatform>,
+        new_authority: Option<Pubkey>,
+        new_treasury: Option<Pubkey>,
+    ) -> Result<()> {
+        instructions::update_platform::handler(ctx, new_authority, new_treasury)
+    }
+
     // ── Escrow ────────────────────────────────────────────────────────────────
 
     pub fn create_game(
@@ -51,8 +62,9 @@ pub mod solchess {
     pub fn join_game(
         ctx: Context<JoinGame>,
         game_id: [u8; 32],
+        joiner_wager: u64,
     ) -> Result<()> {
-        instructions::join_game::handler(ctx, game_id)
+        instructions::join_game::handler(ctx, game_id, joiner_wager)
     }
 
     pub fn settle_game(

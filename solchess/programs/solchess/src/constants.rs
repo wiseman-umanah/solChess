@@ -18,6 +18,10 @@ pub const STAKE_FEE_DRAW_BPS: u64 = 100;
 
 pub const BPS_DENOMINATOR: u64 = 10_000;
 
+/// Share of the platform fee routed to the authority wallet for gas top-up.
+/// 1_000 / 10_000 = 10% of the fee (e.g. on a 3% fee → 0.3% of vault to authority, 2.7% to treasury)
+pub const AUTHORITY_FEE_BPS: u64 = 1_000;
+
 // ─── Limits ───────────────────────────────────────────────────────────────────
 /// Minimum wager a player can lock into escrow (in lamports = 0.01 SOL)
 pub const MIN_WAGER_LAMPORTS: u64 = 10_000_000;

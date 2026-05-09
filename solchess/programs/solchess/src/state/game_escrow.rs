@@ -31,8 +31,11 @@ pub struct GameEscrow {
     /// Black player's wallet (zero pubkey until someone joins)
     pub black: Pubkey,
 
-    /// Wager each player locked in (lamports) — must be equal for both
-    pub wager: u64,
+    /// Wager locked in by white (lamports)
+    pub wager_white: u64,
+
+    /// Wager locked in by black (lamports)
+    pub wager_black: u64,
 
     /// PDA vault that holds the locked SOL
     pub vault: Pubkey,
@@ -65,7 +68,8 @@ impl GameEscrow {
         + 32                         // game_id
         + 32                         // white
         + 32                         // black
-        + 8                          // wager
+        + 8                          // wager_white
+        + 8                          // wager_black
         + 32                         // vault
         + 1                          // vault_bump
         + 1                          // status (enum tag)

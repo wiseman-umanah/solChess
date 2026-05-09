@@ -10,6 +10,8 @@ import { useGameStore } from '../stores/gameStore'
 import { useUserStore } from '../stores/userStore'
 import { api } from '../lib/apiClient'
 import { socket } from '../lib/socket'
+import { useAnchorWallet } from '@solana/wallet-adapter-react'
+import { placeStakeOnChain, claimStakeWinnings } from '../lib/anchorProgram'
 import type { Player } from '../types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -29,6 +31,7 @@ interface GameData {
   prizePool: number
   stakesWhite: number
   stakesBlack: number
+  wager: number
   winner: string | null
   endReason: string | null
   white: Player | null
@@ -182,20 +185,39 @@ function LeftPanel({
   supportPool,
   stakesWhite,
   stakesBlack,
+  wager,
+  isPlayer,
+  isEnded,
+  winner,
 }: {
   gameId: string
   supportPool: number
   stakesWhite: number
   stakesBlack: number
+  wager: number
+  isPlayer: boolean
+  isEnded: boolean
+  winner: string | null
 }) {
+  const anchorWallet = useAnchorWallet()
   const [activeTab, setActiveTab] = useState<'stake' | 'support'>('stake')
   const [stakeInput, setStakeInput] = useState('')
   const [stakeError, setStakeError] = useState('')
   const [supportInput, setSupportInput] = useState('')
   const [supportError, setSupportError] = useState('')
+  const [stakeLoading, setStakeLoading] = useState(false)
+  const [supportLoading, setSupportLoading] = useState(false)
+  const [claimLoading, setClaimLoading] = useState(false)
+  const [claimError, setClaimError] = useState('')
+  const [claimed, setClaimed] = useState(false)
   const [localStakesW, setLocalStakesW] = useState(stakesWhite)
   const [localStakesB, setLocalStakesB] = useState(stakesBlack)
   const [localPool, setLocalPool] = useState(supportPool)
+
+  // Sync from parent when socket-driven updates arrive
+  useEffect(() => { setLocalStakesW(stakesWhite) }, [stakesWhite])
+  useEffect(() => { setLocalStakesB(stakesBlack) }, [stakesBlack])
+  useEffect(() => { setLocalPool(supportPool) }, [supportPool])
 
   const totalStaked = localStakesW + localStakesB
   const whitePct = totalStaked > 0 ? (localStakesW / totalStaked) * 100 : 50
@@ -204,22 +226,47 @@ function LeftPanel({
   async function handleStake(side: 'white' | 'black') {
     const v = sanitizeAmount(stakeInput)
     if (!v) { setStakeError('Min 0.01 SOL, max 2 decimal places'); return }
+    if (wager > 0 && !anchorWallet) { setStakeError('Connect a wallet to stake'); return }
     setStakeError('')
+    setStakeLoading(true)
     try {
+      // For wager games, lock stake on-chain first before syncing to DB
+      if (wager > 0 && anchorWallet) {
+        await placeStakeOnChain(anchorWallet, gameId, side, v)
+      }
       await api.post(`/api/v1/games/${gameId}/stake`, { side, amount: v })
       if (side === 'white') setLocalStakesW(p => parseFloat((p + v).toFixed(2)))
       else setLocalStakesB(p => parseFloat((p + v).toFixed(2)))
       setStakeInput('')
     } catch (e: unknown) {
       setStakeError(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setStakeLoading(false)
+    }
+  }
+
+  async function handleClaim() {
+    if (!anchorWallet) { setClaimError('Connect a wallet to claim'); return }
+    setClaimLoading(true)
+    setClaimError('')
+    try {
+      await claimStakeWinnings(anchorWallet, gameId)
+      setClaimed(true)
+    } catch (e: unknown) {
+      setClaimError(e instanceof Error ? e.message : 'Claim failed')
+    } finally {
+      setClaimLoading(false)
     }
   }
 
   async function handleSupport(amount: number) {
+    setSupportLoading(true)
     try {
       await api.post(`/api/v1/games/${gameId}/support`, { amount })
       setLocalPool(p => parseFloat((p + amount).toFixed(2)))
-    } catch { /* ignore */ }
+    } catch { /* ignore */ } finally {
+      setSupportLoading(false)
+    }
   }
 
   async function handleCustomSupport() {
@@ -282,10 +329,16 @@ function LeftPanel({
           </div>
           {stakeError && <p className="text-[9px]" style={{ color: '#FF3B30' }}>{stakeError}</p>}
           <div className="flex gap-2">
-            <button onClick={() => handleStake('white')} className="flex-1 py-2.5 text-xs font-bold transition-all hover:opacity-90"
-              style={{ background: 'rgba(153,69,255,0.12)', border: '1.5px solid #9945FF', color: '#9945FF' }}>♔ White</button>
-            <button onClick={() => handleStake('black')} className="flex-1 py-2.5 text-xs font-bold transition-all hover:opacity-90"
-              style={{ background: 'rgba(20,241,149,0.1)', border: '1.5px solid #14F195', color: '#14F195' }}>♚ Black</button>
+            <button onClick={() => handleStake('white')} disabled={stakeLoading}
+              className="flex-1 py-2.5 text-xs font-bold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ background: 'rgba(153,69,255,0.12)', border: '1.5px solid #9945FF', color: '#9945FF' }}>
+              {stakeLoading ? '…' : '♔ White'}
+            </button>
+            <button onClick={() => handleStake('black')} disabled={stakeLoading}
+              className="flex-1 py-2.5 text-xs font-bold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ background: 'rgba(20,241,149,0.1)', border: '1.5px solid #14F195', color: '#14F195' }}>
+              {stakeLoading ? '…' : '♚ Black'}
+            </button>
           </div>
         </div>
       )}
@@ -295,10 +348,10 @@ function LeftPanel({
           <p className="text-[9px] leading-relaxed" style={{ color: '#8888aa' }}>Add to the prize pool. 100% goes to the winner.</p>
           <div className="grid grid-cols-2 gap-1.5">
             {SUPPORT_CHIPS.map(c => (
-              <button key={c} onClick={() => handleSupport(c)}
-                className="py-2 text-[10px] font-bold transition-all hover:opacity-80"
+              <button key={c} onClick={() => handleSupport(c)} disabled={supportLoading}
+                className="py-2 text-[10px] font-bold transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.25)', color: '#FFD700' }}
-              >{c} SOL</button>
+              >{supportLoading ? '…' : `${c} SOL`}</button>
             ))}
           </div>
           <div className="flex items-center overflow-hidden" style={{ border: `1px solid ${supportError ? '#FF3B30' : '#2a2a3a'}`, background: '#0a0a0f' }}>
@@ -310,10 +363,38 @@ function LeftPanel({
               className="flex-1 px-2 py-2 text-sm font-mono font-bold bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               style={{ color: '#FFD700' }}
             />
-            <button onClick={handleCustomSupport} className="px-3 py-2 text-[9px] font-bold"
-              style={{ background: 'rgba(255,215,0,0.15)', color: '#FFD700', borderLeft: '1px solid #2a2a3a' }}>Add</button>
+            <button onClick={handleCustomSupport} disabled={supportLoading} className="px-3 py-2 text-[9px] font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ background: 'rgba(255,215,0,0.15)', color: '#FFD700', borderLeft: '1px solid #2a2a3a' }}>
+              {supportLoading ? '…' : 'Add'}
+            </button>
           </div>
           {supportError && <p className="text-[9px]" style={{ color: '#FF3B30' }}>{supportError}</p>}
+        </div>
+      )}
+
+      {/* Claim winnings — shown when game ended with wager and user is a spectator */}
+      {isEnded && wager > 0 && !isPlayer && (
+        <div className="flex flex-col gap-1.5 flex-shrink-0 mt-auto pt-2" style={{ borderTop: '1px solid #2a2a3a' }}>
+          {claimed ? (
+            <p className="text-[10px] text-center font-semibold" style={{ color: '#14F195' }}>
+              ✓ Winnings claimed!
+            </p>
+          ) : (
+            <>
+              <p className="text-[9px] text-center" style={{ color: '#8888aa' }}>
+                {winner ? `${winner.charAt(0).toUpperCase() + winner.slice(1)} won` : 'Game over'} · Claim your stake payout
+              </p>
+              <button
+                onClick={handleClaim}
+                disabled={claimLoading}
+                className="w-full py-2.5 text-xs font-bold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'rgba(20,241,149,0.1)', border: '1.5px solid #14F195', color: '#14F195' }}
+              >
+                {claimLoading ? '…' : '⬇ Claim Winnings'}
+              </button>
+              {claimError && <p className="text-[9px]" style={{ color: '#FF3B30' }}>{claimError}</p>}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -655,6 +736,14 @@ export default function GamePage() {
       setBothConnected(false)
     })
 
+    socket.on('stake-update', ({ stakesWhite, stakesBlack }: { stakesWhite: number; stakesBlack: number }) => {
+      setGame(prev => prev ? { ...prev, stakesWhite, stakesBlack } : prev)
+    })
+
+    socket.on('prize-pool-update', ({ prizePool }: { prizePool: number }) => {
+      setGame(prev => prev ? { ...prev, prizePool } : prev)
+    })
+
     socket.on('error', ({ message }: { message: string }) => {
       console.warn('Socket error:', message)
     })
@@ -671,6 +760,8 @@ export default function GamePage() {
       socket.off('undo-confirmed')
       socket.off('undo-declined')
       socket.off('opponent-disconnected')
+      socket.off('stake-update')
+      socket.off('prize-pool-update')
       socket.off('error')
     }
   }, [id])
@@ -795,6 +886,10 @@ export default function GamePage() {
             supportPool={game.prizePool}
             stakesWhite={game.stakesWhite}
             stakesBlack={game.stakesBlack}
+            wager={game.wager ?? 0}
+            isPlayer={playerColor !== null}
+            isEnded={isEnded}
+            winner={game.winner}
           />
         ) : (
           <div className="flex flex-col gap-2 h-full">

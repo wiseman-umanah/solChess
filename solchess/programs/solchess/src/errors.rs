@@ -30,6 +30,9 @@ pub enum SolChessError {
     #[msg("Only the game authority can settle this game")]
     UnauthorizedSettle,
 
+    #[msg("Only the platform admin can perform this action")]
+    UnauthorizedAdmin,
+
     // ── Staking ───────────────────────────────────────────────────────────────
     #[msg("Stake amount is below the minimum allowed")]
     StakeTooSmall,

@@ -45,7 +45,7 @@ pub(crate) fn handler(ctx: Context<ClaimAbandoned>, game_id: [u8; 32]) -> Result
         &[escrow.vault_bump],
     ]];
 
-    // Refund white's wager in full (no opponent, no fee)
+    // Refund the creator's wager in full (no opponent, no fee)
     system_program::transfer(
         CpiContext::new_with_signer(
             ctx.accounts.system_program.to_account_info(),
@@ -55,7 +55,7 @@ pub(crate) fn handler(ctx: Context<ClaimAbandoned>, game_id: [u8; 32]) -> Result
             },
             seeds,
         ),
-        escrow.wager,
+        escrow.wager_white,
     )?;
 
     escrow.status = GameStatus::Abandoned;

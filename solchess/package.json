@@ -2,7 +2,13 @@
   "license": "ISC",
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
-    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
+    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
+    "init-platform": "node scripts/init_platform.cjs",
+    "init-platform:devnet": "node scripts/init_platform.cjs devnet",
+    "init-platform:mainnet": "node scripts/init_platform.cjs mainnet-beta",
+    "update-platform": "node scripts/update_platform.cjs",
+    "update-platform:devnet": "node scripts/update_platform.cjs devnet",
+    "update-platform:mainnet": "node scripts/update_platform.cjs mainnet-beta"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1"

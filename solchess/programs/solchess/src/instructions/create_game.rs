@@ -50,7 +50,8 @@ pub(crate) fn handler(
     // Assign creator to the correct colour slot; the other stays empty
     escrow.white      = if creator_is_white { creator } else { Pubkey::default() };
     escrow.black      = if creator_is_white { Pubkey::default() } else { creator };
-    escrow.wager      = wager;
+    escrow.wager_white = if creator_is_white { wager } else { 0 };
+    escrow.wager_black = if creator_is_white { 0 } else { wager };
     escrow.vault      = ctx.accounts.vault.key();
     escrow.vault_bump = ctx.bumps.vault;
     escrow.status     = GameStatus::Open;
