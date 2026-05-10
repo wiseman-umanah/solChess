@@ -1,5 +1,7 @@
 import { Connection, Keypair, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js'
-import { AnchorProvider, Program, type Idl, BN } from '@coral-xyz/anchor'
+import pkg from '@coral-xyz/anchor'
+const { AnchorProvider, Program, BN } = pkg
+import type { Idl, Program as ProgramType } from '@coral-xyz/anchor'
 import bs58 from 'bs58'
 import { createRequire } from 'module'
 
@@ -35,9 +37,9 @@ function loadAuthorityKeypair(): Keypair {
 
 // ── Program singleton ─────────────────────────────────────────────────────────
 
-let _program: Program | null = null
+let _program: ProgramType | null = null
 
-export function getProgram(): Program {
+export function getProgram(): ProgramType {
   if (_program) return _program
 
   const rpcUrl = process.env.SOLANA_RPC_URL ?? 'http://127.0.0.1:8899'
