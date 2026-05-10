@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsup src/server.ts --format esm --dts",
+    "build": "tsup src/server.ts --format esm --external dotenv && cp src/anchor/solchess.json dist/solchess.json",
     "start": "node dist/server.js",
     "db:setup": "bash scripts/setup-db.sh",
     "db:migrate": "prisma migrate dev --schema prisma/schema",
