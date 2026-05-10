@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
-# Load .env
-if [ -f "$(dirname "$0")/../.env" ]; then
-  export $(grep -v '^#' "$(dirname "$0")/../.env" | xargs)
+# Load DATABASE_URL from .env
+ENV_FILE="$(dirname "$0")/../.env"
+if [ -f "$ENV_FILE" ]; then
+  DATABASE_URL=$(grep '^DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d '=' -f2- | tr -d '"')
+  export DATABASE_URL
 fi
 
 # Parse DATABASE_URL
