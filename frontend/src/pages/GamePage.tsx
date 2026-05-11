@@ -12,7 +12,7 @@ import { useUserStore } from '../stores/userStore'
 import { api } from '../lib/apiClient'
 import { socket } from '../lib/socket'
 import { useAnchorWallet } from '@solana/wallet-adapter-react'
-import { placeStakeOnChain, claimStakeWinnings } from '../lib/anchorProgram'
+import { placeStakeOnChain, addToSupportPool, claimStakeWinnings } from '../lib/anchorProgram'
 import type { Player } from '../types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -208,6 +208,7 @@ function LeftPanel({
   const [supportError, setSupportError] = useState('')
   const [stakeLoading, setStakeLoading] = useState(false)
   const [supportLoading, setSupportLoading] = useState(false)
+  const [stakedSide, setStakedSide] = useState<'white' | 'black' | null>(null)
   const [claimLoading, setClaimLoading] = useState(false)
   const [claimError, setClaimError] = useState('')
   const [claimed, setClaimed] = useState(false)
@@ -227,17 +228,17 @@ function LeftPanel({
   async function handleStake(side: 'white' | 'black') {
     const v = sanitizeAmount(stakeInput)
     if (!v) { setStakeError('Min 0.01 SOL, max 2 decimal places'); return }
-    if (wager > 0 && !anchorWallet) { setStakeError('Connect a wallet to stake'); return }
+    if (!anchorWallet) { setStakeError('Connect your wallet to stake'); return }
     setStakeError('')
     setStakeLoading(true)
     try {
-      // For wager games, lock stake on-chain first before syncing to DB
-      if (wager > 0 && anchorWallet) {
+      if (wager > 0) {
         await placeStakeOnChain(anchorWallet, gameId, side, v)
       }
       await api.post(`/api/v1/games/${gameId}/stake`, { side, amount: v })
-      if (side === 'white') setLocalStakesW(p => parseFloat((p + v).toFixed(2)))
-      else setLocalStakesB(p => parseFloat((p + v).toFixed(2)))
+      if (side === 'white') setLocalStakesW(p => parseFloat((p + v).toFixed(4)))
+      else setLocalStakesB(p => parseFloat((p + v).toFixed(4)))
+      setStakedSide(side)
       setStakeInput('')
     } catch (e: unknown) {
       setStakeError(e instanceof Error ? e.message : 'Failed')
@@ -261,11 +262,18 @@ function LeftPanel({
   }
 
   async function handleSupport(amount: number) {
+    if (!anchorWallet) { setSupportError('Connect your wallet to contribute'); return }
+    setSupportError('')
     setSupportLoading(true)
     try {
+      if (wager > 0) {
+        await addToSupportPool(anchorWallet, gameId, amount)
+      }
       await api.post(`/api/v1/games/${gameId}/support`, { amount })
-      setLocalPool(p => parseFloat((p + amount).toFixed(2)))
-    } catch { /* ignore */ } finally {
+      setLocalPool(p => parseFloat((p + amount).toFixed(4)))
+    } catch (e: unknown) {
+      setSupportError(e instanceof Error ? e.message : 'Failed')
+    } finally {
       setSupportLoading(false)
     }
   }
@@ -283,9 +291,19 @@ function LeftPanel({
       <div className="flex flex-col items-center py-3 flex-shrink-0" style={{ background: '#0a0a0f', border: '1px solid #2a2a3a' }}>
         <p className="text-[9px] font-semibold uppercase tracking-widest mb-0.5" style={{ color: '#8888aa' }}>Prize Pool</p>
         <p className="text-2xl font-bold" style={{ color: '#FFD700' }}>
-          {localPool.toFixed(2)}<span className="text-sm ml-1" style={{ color: '#8888aa' }}>SOL</span>
+          {(wager + localPool).toFixed(4)}<span className="text-sm ml-1" style={{ color: '#8888aa' }}>SOL</span>
         </p>
-        <p className="text-[9px] mt-0.5" style={{ color: '#55556a' }}>Community supported · Winner takes all</p>
+        {wager > 0 && localPool > 0 && (
+          <p className="text-[9px] mt-0.5" style={{ color: '#55556a' }}>
+            {wager.toFixed(4)} wager · {localPool.toFixed(4)} community
+          </p>
+        )}
+        {wager > 0 && localPool === 0 && (
+          <p className="text-[9px] mt-0.5" style={{ color: '#55556a' }}>Player wagers · Winner takes all minus 3%</p>
+        )}
+        {wager === 0 && (
+          <p className="text-[9px] mt-0.5" style={{ color: '#55556a' }}>Community supported · Winner takes all</p>
+        )}
       </div>
 
       <div className="flex flex-col gap-1 flex-shrink-0">
@@ -317,36 +335,48 @@ function LeftPanel({
 
       {activeTab === 'stake' && (
         <div className="flex flex-col gap-3 flex-1">
-          <p className="text-[9px]" style={{ color: '#8888aa' }}>Enter amount and pick a side. You profit if your pick wins.</p>
-          <div className="flex items-center overflow-hidden" style={{ border: `1px solid ${stakeError ? '#FF3B30' : '#2a2a3a'}`, background: '#0a0a0f' }}>
-            <span className="pl-2 text-[10px]" style={{ color: '#8888aa' }}>SOL</span>
-            <input type="number" min="0.01" step="0.01" value={stakeInput}
-              onChange={e => { setStakeInput(e.target.value); setStakeError('') }}
-              onKeyDown={e => e.key === 'Enter' && handleStake('white')}
-              placeholder="0.01"
-              className="flex-1 px-2 py-2 text-sm font-mono font-bold bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-              style={{ color: '#FFD700' }}
-            />
-          </div>
-          {stakeError && <p className="text-[9px]" style={{ color: '#FF3B30' }}>{stakeError}</p>}
-          <div className="flex gap-2">
-            <button onClick={() => handleStake('white')} disabled={stakeLoading}
-              className="flex-1 py-2.5 text-xs font-bold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{ background: 'rgba(153,69,255,0.12)', border: '1.5px solid #9945FF', color: '#9945FF' }}>
-              {stakeLoading ? '…' : '♔ White'}
-            </button>
-            <button onClick={() => handleStake('black')} disabled={stakeLoading}
-              className="flex-1 py-2.5 text-xs font-bold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{ background: 'rgba(20,241,149,0.1)', border: '1.5px solid #14F195', color: '#14F195' }}>
-              {stakeLoading ? '…' : '♚ Black'}
-            </button>
-          </div>
+          {stakedSide ? (
+            <div className="flex flex-col items-center justify-center gap-2 flex-1 py-4"
+              style={{ background: '#0a0a0f', border: `1px solid ${stakedSide === 'white' ? '#9945FF' : '#14F195'}` }}>
+              <p className="text-xs font-bold" style={{ color: stakedSide === 'white' ? '#9945FF' : '#14F195' }}>
+                {stakedSide === 'white' ? '♔' : '♚'} Staked on {stakedSide === 'white' ? 'White' : 'Black'}
+              </p>
+              <p className="text-[9px]" style={{ color: '#8888aa' }}>You'll earn if your pick wins</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-[9px]" style={{ color: '#8888aa' }}>Enter amount and pick a side. You profit if your pick wins.</p>
+              <div className="flex items-center overflow-hidden" style={{ border: `1px solid ${stakeError ? '#FF3B30' : '#2a2a3a'}`, background: '#0a0a0f' }}>
+                <span className="pl-2 text-[10px]" style={{ color: '#8888aa' }}>SOL</span>
+                <input type="number" min="0.01" step="0.01" value={stakeInput}
+                  onChange={e => { setStakeInput(e.target.value); setStakeError('') }}
+                  onKeyDown={e => e.key === 'Enter' && handleStake('white')}
+                  placeholder="0.01"
+                  className="flex-1 px-2 py-2 text-sm font-mono font-bold bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  style={{ color: '#FFD700' }}
+                />
+              </div>
+              {stakeError && <p className="text-[9px]" style={{ color: '#FF3B30' }}>{stakeError}</p>}
+              <div className="flex gap-2">
+                <button onClick={() => handleStake('white')} disabled={stakeLoading}
+                  className="flex-1 py-2.5 text-xs font-bold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ background: 'rgba(153,69,255,0.12)', border: '1.5px solid #9945FF', color: '#9945FF' }}>
+                  {stakeLoading ? '…' : '♔ White'}
+                </button>
+                <button onClick={() => handleStake('black')} disabled={stakeLoading}
+                  className="flex-1 py-2.5 text-xs font-bold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ background: 'rgba(20,241,149,0.1)', border: '1.5px solid #14F195', color: '#14F195' }}>
+                  {stakeLoading ? '…' : '♚ Black'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
       {activeTab === 'support' && (
         <div className="flex flex-col gap-3 flex-1">
-          <p className="text-[9px] leading-relaxed" style={{ color: '#8888aa' }}>Add to the prize pool. 100% goes to the winner.</p>
+          <p className="text-[9px] leading-relaxed" style={{ color: '#8888aa' }}>Add to the prize pool. Goes to the winner on-chain.</p>
           <div className="grid grid-cols-2 gap-1.5">
             {SUPPORT_CHIPS.map(c => (
               <button key={c} onClick={() => handleSupport(c)} disabled={supportLoading}
@@ -355,19 +385,24 @@ function LeftPanel({
               >{supportLoading ? '…' : `${c} SOL`}</button>
             ))}
           </div>
-          <div className="flex items-center overflow-hidden" style={{ border: `1px solid ${supportError ? '#FF3B30' : '#2a2a3a'}`, background: '#0a0a0f' }}>
-            <span className="pl-2 text-[10px]" style={{ color: '#8888aa' }}>SOL</span>
-            <input type="number" min="0.01" step="0.01" value={supportInput}
-              onChange={e => { setSupportInput(e.target.value); setSupportError('') }}
-              onKeyDown={e => e.key === 'Enter' && handleCustomSupport()}
-              placeholder="0.01"
-              className="flex-1 px-2 py-2 text-sm font-mono font-bold bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-              style={{ color: '#FFD700' }}
-            />
-            <button onClick={handleCustomSupport} disabled={supportLoading} className="px-3 py-2 text-[9px] font-bold disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{ background: 'rgba(255,215,0,0.15)', color: '#FFD700', borderLeft: '1px solid #2a2a3a' }}>
-              {supportLoading ? '…' : 'Add'}
-            </button>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center overflow-hidden" style={{ border: `1px solid ${supportError ? '#FF3B30' : '#2a2a3a'}`, background: '#0a0a0f' }}>
+              <span className="pl-2 text-[10px]" style={{ color: '#8888aa' }}>SOL</span>
+              <input type="number" min="0.01" step="0.01" value={supportInput}
+                onChange={e => { setSupportInput(e.target.value); setSupportError('') }}
+                onKeyDown={e => e.key === 'Enter' && handleCustomSupport()}
+                placeholder="Custom amount"
+                className="flex-1 px-2 py-2 text-sm font-mono font-bold bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                style={{ color: '#FFD700' }}
+              />
+            </div>
+            {supportInput && (
+              <button onClick={handleCustomSupport} disabled={supportLoading}
+                className="w-full py-2 text-[10px] font-bold transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'rgba(255,215,0,0.15)', border: '1px solid rgba(255,215,0,0.4)', color: '#FFD700' }}>
+                {supportLoading ? 'Confirming…' : `Contribute ${supportInput} SOL →`}
+              </button>
+            )}
           </div>
           {supportError && <p className="text-[9px]" style={{ color: '#FF3B30' }}>{supportError}</p>}
         </div>

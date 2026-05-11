@@ -27,7 +27,7 @@ export default function PlayerStats({ stats, trustScore }: PlayerStatsProps) {
         />
         <StatCard
           label="Win Rate"
-          value={`${stats.winRate}%`}
+          value={`${Number(stats.winRate.toFixed(2))}%`}
           offsetColor="purple"
         />
         <StatCard

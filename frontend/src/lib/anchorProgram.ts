@@ -1,4 +1,4 @@
-import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js'
+import { Connection, PublicKey, LAMPORTS_PER_SOL, Transaction, SystemProgram } from '@solana/web3.js'
 import { AnchorProvider, Program, type Idl, BN } from '@coral-xyz/anchor'
 import type { AnchorWallet } from '@solana/wallet-adapter-react'
 import IDL from '../anchor/solchess.json'
@@ -172,4 +172,24 @@ export async function claimStakeWinnings(
       systemProgram: new PublicKey('11111111111111111111111111111111'),
     })
     .rpc()
+}
+
+/** Transfer SOL directly to the game vault PDA, adding to the prize pool.
+ *  The vault already exists (created by createEscrow), so a plain SOL
+ *  transfer is enough — settle_game will pay out the full vault to the winner. */
+export async function addToSupportPool(
+  wallet: AnchorWallet,
+  gameId: string,
+  amountSol: number,
+): Promise<string> {
+  const connection  = new Connection(RPC_URL, 'confirmed')
+  const provider    = new AnchorProvider(connection, wallet, { commitment: 'confirmed' })
+  const gameIdBytes = gameIdToBytes(gameId)
+  const { vault }   = deriveGamePDAs(gameIdBytes)
+  const lamports    = Math.round(amountSol * LAMPORTS_PER_SOL)
+
+  const tx = new Transaction().add(
+    SystemProgram.transfer({ fromPubkey: wallet.publicKey, toPubkey: vault, lamports })
+  )
+  return provider.sendAndConfirm(tx)
 }

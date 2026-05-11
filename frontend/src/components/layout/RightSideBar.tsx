@@ -97,7 +97,7 @@ export default function RightSidebar({ activePrivateChat, activeChatUsername }: 
                 </div>
                 <div className="flex items-center justify-between mt-1">
                   <span className="text-[10px]" style={{ color: '#FFD700' }}>
-                    {(game.prizePool ?? 0).toFixed(4)} SOL
+                    {((game.wager ?? 0) + (game.prizePool ?? 0)).toFixed(4)} SOL
                   </span>
                   {game.timeControl && (
                     <span className="text-[10px]" style={{ color: '#8888aa' }}>

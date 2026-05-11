@@ -113,7 +113,7 @@ export async function createGame(
   return game
 }
 
-export async function joinGame(gameId: string, joinerWallet: string) {
+export async function joinGame(gameId: string, joinerWallet: string, joinerWager?: number) {
   const existing = await prisma.game.findUnique({ where: { id: gameId } })
   if (!existing) throw new Error('Game not found')
   if (existing.status !== 'WAITING') throw new Error('Game not available')
@@ -130,12 +130,16 @@ export async function joinGame(gameId: string, joinerWallet: string) {
   const newBlack = isWhiteEmpty ? existing.blackWallet : joinerWallet
   const newStatus = newWhite && newBlack ? 'ACTIVE' : 'WAITING'
 
+  // Accumulate total player wagers so the prize pool display is accurate
+  const wagerIncrement = joinerWager && joinerWager > 0 ? joinerWager : 0
+
   const game = await prisma.game.update({
     where: { id: gameId },
     data: {
       whiteWallet: newWhite,
       blackWallet: newBlack ?? undefined,
       status: newStatus,
+      ...(wagerIncrement > 0 ? { wager: { increment: wagerIncrement } } : {}),
     },
     include: { white: true, black: true },
   })
@@ -153,10 +157,10 @@ export async function joinGame(gameId: string, joinerWallet: string) {
   return game
 }
 
-export async function joinByCode(code: string, joinerWallet: string) {
+export async function joinByCode(code: string, joinerWallet: string, joinerWager?: number) {
   const game = await prisma.game.findUnique({ where: { code } })
   if (!game) throw new Error('Game not found')
-  return joinGame(game.id, joinerWallet)
+  return joinGame(game.id, joinerWallet, joinerWager)
 }
 
 // ── Timers ────────────────────────────────────────────────────────────────────
@@ -344,7 +348,7 @@ export async function endGame(
     data: { status: 'ENDED', winner, endReason: reason, endedAt: new Date() },
   })
   // Don't affect stats for practice games
-  if (!isPractice) await updateStats(game.whiteWallet, game.blackWallet, winner)
+  if (!isPractice) await updateStats(game.whiteWallet, game.blackWallet, winner, game.wager)
 
   // Settle on-chain for wager games
   if (!isPractice && game.wager > 0 && game.whiteWallet && game.blackWallet) {
@@ -372,28 +376,39 @@ export async function endGame(
   return game
 }
 
-async function updateStats(whiteWallet: string | null, blackWallet: string | null, winner: string) {
+async function updateStats(whiteWallet: string | null, blackWallet: string | null, winner: string, totalWager = 0) {
   if (!whiteWallet || !blackWallet) return
   const whiteWon = winner === 'white'
   const blackWon = winner === 'black'
 
+  // Winner receives 97% of total vault (3% platform fee). Draw: no earnings change.
+  const winnerPayout = totalWager > 0 ? parseFloat((totalWager * 0.97).toFixed(4)) : 0
+
   await prisma.$transaction([
     prisma.userStats.upsert({
       where: { wallet: whiteWallet },
-      update: { gamesPlayed: { increment: 1 }, gamesWon: { increment: whiteWon ? 1 : 0 } },
-      create: { wallet: whiteWallet, gamesPlayed: 1, gamesWon: whiteWon ? 1 : 0 },
+      update: {
+        gamesPlayed: { increment: 1 },
+        gamesWon: { increment: whiteWon ? 1 : 0 },
+        ...(whiteWon && winnerPayout > 0 ? { totalEarnings: { increment: winnerPayout } } : {}),
+      },
+      create: { wallet: whiteWallet, gamesPlayed: 1, gamesWon: whiteWon ? 1 : 0, totalEarnings: whiteWon ? winnerPayout : 0 },
     }),
     prisma.userStats.upsert({
       where: { wallet: blackWallet },
-      update: { gamesPlayed: { increment: 1 }, gamesWon: { increment: blackWon ? 1 : 0 } },
-      create: { wallet: blackWallet, gamesPlayed: 1, gamesWon: blackWon ? 1 : 0 },
+      update: {
+        gamesPlayed: { increment: 1 },
+        gamesWon: { increment: blackWon ? 1 : 0 },
+        ...(blackWon && winnerPayout > 0 ? { totalEarnings: { increment: winnerPayout } } : {}),
+      },
+      create: { wallet: blackWallet, gamesPlayed: 1, gamesWon: blackWon ? 1 : 0, totalEarnings: blackWon ? winnerPayout : 0 },
     }),
   ])
 
   for (const wallet of [whiteWallet, blackWallet]) {
     const stats = await prisma.userStats.findUnique({ where: { wallet } })
     if (!stats) continue
-    const winRate = stats.gamesPlayed > 0 ? (stats.gamesWon / stats.gamesPlayed) * 100 : 0
+    const winRate = stats.gamesPlayed > 0 ? Math.round((stats.gamesWon / stats.gamesPlayed) * 10000) / 100 : 0
     await prisma.userStats.update({ where: { wallet }, data: { winRate } })
     const trustScore = Math.min(99, Math.floor(winRate * 0.6 + Math.min(stats.gamesPlayed, 200) * 0.2))
     await prisma.user.update({ where: { wallet }, data: { trustScore } })

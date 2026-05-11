@@ -20,14 +20,16 @@ export default function JoinModal({ open, onClose }: JoinModalProps) {
   const [error,        setError]       = useState('')
   const [wager,        setWager]       = useState<number | null>(null)
   const [customWager,  setCustomWager] = useState('')
-  // creatorWager is set once we know the game has a wager (after first code lookup)
+  // Set after looking up the game — holds wager and id so join only fires once
   const [creatorWager, setCreatorWager] = useState<number | null>(null)
+  const [lookedUpGame, setLookedUpGame] = useState<{ id: string; wager: number } | null>(null)
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12)
     setCode(val)
     setError('')
     setCreatorWager(null)
+    setLookedUpGame(null)
     setWager(null)
     setCustomWager('')
   }
@@ -49,24 +51,49 @@ export default function JoinModal({ open, onClose }: JoinModalProps) {
     }
 
     const joinerWager = resolvedWager()
-
     setError('')
     setJoining(true)
-    try {
-      const game = await api.post<{ id: string; wager: number }>('/api/v1/games/by-code/join', { code: clean })
 
-      if (game.wager > 0) {
+    try {
+      // Phase 1 — lookup game info without joining (no auth, no state mutation)
+      let gameInfo = lookedUpGame
+      if (!gameInfo) {
+        const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+        const res = await fetch(`${BASE}/api/v1/games/by-code/${clean}`)
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          setError((body as { error?: string }).error ?? 'Game not found')
+          setJoining(false)
+          return
+        }
+        gameInfo = await res.json() as { id: string; wager: number }
+        setLookedUpGame(gameInfo)
+      }
+
+      // Phase 2 — if game has a wager, ensure joiner wager is set first
+      if (gameInfo.wager > 0) {
         if (!anchorWallet) {
+          setCreatorWager(gameInfo.wager)
           setError('Connect a Solana wallet to join a wager game')
           setJoining(false)
           return
         }
         if (!joinerWager || joinerWager < 0.01) {
-          setCreatorWager(game.wager)
+          setCreatorWager(gameInfo.wager)
           setError('Set your wager to join this game')
           setJoining(false)
           return
         }
+      }
+
+      // Phase 3 — join the game (single call, happens only once)
+      const game = await api.post<{ id: string; wager: number }>('/api/v1/games/by-code/join', {
+        code: clean,
+        ...(joinerWager && joinerWager >= 0.01 ? { joinerWager } : {}),
+      })
+
+      // Phase 4 — lock wager on-chain
+      if (game.wager > 0 && joinerWager && joinerWager >= 0.01 && anchorWallet) {
         try {
           await joinEscrow(anchorWallet, game.id, joinerWager)
         } catch (e: unknown) {
@@ -76,6 +103,7 @@ export default function JoinModal({ open, onClose }: JoinModalProps) {
         }
       }
 
+      setJoining(false)
       onClose()
       navigate(`/games/${game.id}`)
     } catch (e: unknown) {
@@ -90,6 +118,8 @@ export default function JoinModal({ open, onClose }: JoinModalProps) {
     setWager(null)
     setCustomWager('')
     setCreatorWager(null)
+    setLookedUpGame(null)
+    setJoining(false)
     onClose()
   }
 

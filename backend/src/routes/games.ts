@@ -42,6 +42,17 @@ export default async function gameRoutes(app: FastifyInstance) {
     return games
   })
 
+  // Lookup game by code — read-only, no auth, no joining (used by JoinModal to preview wager)
+  app.get<{ Params: { code: string } }>('/games/by-code/:code', async (req, reply) => {
+    const game = await prisma.game.findUnique({
+      where: { code: req.params.code.toUpperCase() },
+      select: { id: true, wager: true, status: true, isPractice: true },
+    })
+    if (!game) return reply.status(404).send({ error: 'Game not found' })
+    if (game.status !== 'WAITING') return reply.status(400).send({ error: 'Game is no longer available' })
+    return { id: game.id, wager: game.wager }
+  })
+
   // Get single game (players only for practice)
   app.get<{ Params: { id: string } }>('/games/:id', async (req, reply) => {
     const game = await prisma.game.findUnique({ where: { id: req.params.id }, include: gameInclude })
@@ -78,15 +89,18 @@ export default async function gameRoutes(app: FastifyInstance) {
   )
 
   // Join game by ID or code (auth required)
-  app.post<{ Params: { id: string }; Body: { code?: string } }>(
+  app.post<{ Params: { id: string }; Body: { code?: string; joinerWager?: number } }>(
     '/games/:id/join',
     { preHandler: requireAuth },
     async (req, reply) => {
       const { wallet } = req.user as { wallet: string }
+      const joinerWager = typeof req.body.joinerWager === 'number' && req.body.joinerWager > 0
+        ? req.body.joinerWager
+        : undefined
       try {
         const game = req.params.id === 'by-code' && req.body.code
-          ? await joinByCode(req.body.code, wallet)
-          : await joinGame(req.params.id, wallet)
+          ? await joinByCode(req.body.code, wallet, joinerWager)
+          : await joinGame(req.params.id, wallet, joinerWager)
         return game
       } catch (e: unknown) {
         return reply.status(400).send({ error: e instanceof Error ? e.message : 'Join failed' })

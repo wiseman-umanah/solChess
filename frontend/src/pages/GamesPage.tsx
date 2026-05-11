@@ -26,6 +26,7 @@ interface ApiGame {
   isHosted: boolean
   hostWallet: string | null
   prizePool: number
+  wager: number
   stakesWhite: number
   stakesBlack: number
   white: ApiPlayer | null
@@ -198,7 +199,7 @@ function GameCard({ game }: { game: ApiGame }) {
           </div>
           <div className="flex items-center gap-2 text-[10px]" style={{ color: '#8888aa' }}>
             {game.timeControl && <span>⏱ {Math.floor(game.timeControl / 60)}m</span>}
-            {isLive && <span>Move {game.moves.length}</span>}
+            {isLive && <span>Move {game.moves?.length ?? 0}</span>}
           </div>
         </div>
 
@@ -232,7 +233,7 @@ function GameCard({ game }: { game: ApiGame }) {
           <div className="absolute top-2 left-3 pointer-events-none">
             <p className="text-[9px] font-medium leading-none" style={{ color: '#8888aa' }}>Prize Pool</p>
             <p className="text-sm font-bold leading-tight" style={{ color: '#FFD700' }}>
-              {game.prizePool.toFixed(4)} SOL
+              {(game.wager + game.prizePool).toFixed(4)} SOL
             </p>
           </div>
           <div className="absolute top-2 right-3 flex items-center gap-2 pointer-events-none">
@@ -372,7 +373,7 @@ export default function GamesPage() {
     return g.status !== 'ENDED'
   })
 
-  const totalPool = games.reduce((s, g) => s + g.prizePool, 0)
+  const totalPool = games.reduce((s, g) => s + g.wager + g.prizePool, 0)
   const liveCount = games.filter(g => g.status === 'ACTIVE').length
 
   return (
