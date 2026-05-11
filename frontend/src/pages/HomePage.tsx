@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import SEO, { BASE_URL } from '../components/SEO'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
@@ -126,6 +127,29 @@ export default function HomePage() {
 
   return (
     <div className="relative flex flex-col h-[calc(100vh-140px)] px-4 py-3 gap-2">
+      <SEO
+        url={BASE_URL}
+        structuredData={{
+          '@context': 'https://schema.org',
+          '@type': 'WebApplication',
+          name: 'SolChess',
+          url: BASE_URL,
+          applicationCategory: 'GameApplication',
+          operatingSystem: 'Web',
+          description: 'Trustless chess platform on Solana. Wager SOL, stake on outcomes, win on-chain — no middleman, instant settlement.',
+          offers: {
+            '@type': 'Offer',
+            price: '0',
+            priceCurrency: 'USD',
+            description: 'Free to play. Wagers and stakes use SOL.',
+          },
+          author: {
+            '@type': 'Organization',
+            name: 'SolChess',
+            url: BASE_URL,
+          },
+        }}
+      />
 
       {/* Black player card */}
       <div

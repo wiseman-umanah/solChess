@@ -1,3 +1,4 @@
+import SEO from '../components/SEO'
 import DoubleCard from '../components/ui/DoubleCard'
 import Avatar from '../components/ui/Avatar'
 import Badge from '../components/ui/Badge'
@@ -19,6 +20,11 @@ export default function LeaderboardPage() {
 
   return (
     <div className="px-6 py-8 max-w-3xl mx-auto">
+      <SEO
+        title="Leaderboard — Top SolChess Players"
+        description="See the top chess players on SolChess ranked by wins, earnings, and trust score. All stats are on-chain verified."
+        url="https://sol-chess-nine.vercel.app/leaderboard"
+      />
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white mb-1">Leaderboard</h1>
         <p className="text-sm" style={{ color: '#8888aa' }}>Top players ranked by trust score</p>

@@ -13,6 +13,7 @@ import { api } from '../lib/apiClient'
 import { socket } from '../lib/socket'
 import { useAnchorWallet } from '@solana/wallet-adapter-react'
 import { placeStakeOnChain, addToSupportPool, claimStakeWinnings } from '../lib/anchorProgram'
+import SEO, { BASE_URL } from '../components/SEO'
 import type { Player } from '../types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -912,11 +913,25 @@ export default function GamePage() {
   const canUndo = isPractice && playerColor !== null && moveHistory.length >= 2 && !isEnded && !undoRequester
   const isOwner = game.creatorColor === playerColor
 
+  const whiteName = game?.white?.username ?? game?.whiteWallet?.slice(0, 6) ?? 'White'
+  const blackName = game?.black?.username ?? game?.blackWallet?.slice(0, 6) ?? 'Black'
+  const totalPot  = ((game?.wager ?? 0) + (game?.prizePool ?? 0)).toFixed(4)
+  const gameTitle = game
+    ? `${whiteName} vs ${blackName} — ${totalPot} SOL`
+    : 'Live Chess Game'
+  const gameDesc = game
+    ? `Watch ${whiteName} vs ${blackName} live on SolChess. ${totalPot} SOL prize pool. Stake your pick on-chain.`
+    : 'Live chess on Solana with on-chain wagers and staking.'
   return (
     <div className={isMobile
       ? "flex flex-col gap-3 px-2 py-2"
       : "flex gap-3 px-4 py-3 h-[calc(100vh-140px)]"
     }>
+      <SEO
+        title={gameTitle}
+        description={gameDesc}
+        url={`${BASE_URL}/games/${id}`}
+      />
 
       {/* Left: stake panel (public) OR practice controls */}
       {!isMobile && <div className="w-[200px] flex-shrink-0 flex flex-col gap-2">

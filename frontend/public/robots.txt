@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /games/*/
+
+Sitemap: https://sol-chess-nine.vercel.app/sitemap.xml

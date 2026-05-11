@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import SEO from '../components/SEO'
 import LiveIndicator from '../components/ui/LiveIndicator'
 import Avatar from '../components/ui/Avatar'
 import { SkeletonGameCard } from '../components/ui/Skeleton'
@@ -378,7 +379,11 @@ export default function GamesPage() {
 
   return (
     <div className="px-6 py-6 flex flex-col gap-6">
-
+      <SEO
+        title="Live Chess Games — Stake and Win SOL"
+        description="Watch live chess matches on Solana, stake SOL on your pick, and earn when your side wins. All settlement is on-chain."
+        url="https://sol-chess-nine.vercel.app/games"
+      />
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>

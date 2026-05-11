@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import SEO from '../components/SEO'
 import ChessBoard from '../components/chess/ChessBoard'
 import PlayerCard from '../components/chess/PlayerCard'
 import MoveHistory from '../components/chess/MoveHistory'
@@ -281,6 +282,11 @@ function PracticeGame({
 
   return (
     <div className="flex gap-4 px-4 py-4 h-[calc(100vh-140px)]">
+      <SEO
+        title="Practice Chess — Play Against AI"
+        description="Sharpen your chess skills against an AI opponent on SolChess. Choose your difficulty and get ready to play for real SOL."
+        url="https://sol-chess-nine.vercel.app/practice"
+      />
       {/* Board + players */}
       <div className="flex flex-col gap-3 flex-1 min-w-0">
         <PlayerCard

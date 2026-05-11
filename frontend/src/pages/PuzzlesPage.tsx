@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import SEO from '../components/SEO'
 import { useIsMobile } from '../hooks/useIsMobile'
 import ChessBoard from '../components/chess/ChessBoard'
 import DoubleButton from '../components/ui/DoubleButton'
@@ -190,6 +191,11 @@ export default function PuzzlesPage() {
 
   return (
     <div className="flex flex-col items-center gap-6 px-4 py-8">
+      <SEO
+        title="Daily Chess Puzzles — Sharpen Your Game"
+        description="Solve today's Lichess daily puzzle on SolChess. Train your tactics and get ready to wager SOL against real opponents."
+        url="https://sol-chess-nine.vercel.app/puzzles"
+      />
       <div className="w-full" style={{ maxWidth: 640 }}>
 
         {/* Header */}
