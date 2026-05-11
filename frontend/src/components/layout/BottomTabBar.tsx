@@ -4,19 +4,13 @@ import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import PlayerStats from '../stats/PlayerStats'
 import WorldChat from '../chat/WorldChat'
 import PrivateChat from '../chat/PrivateChat'
-import LiveIndicator from '../ui/LiveIndicator'
-import Avatar from '../ui/Avatar'
 import CreateModal from '../modals/CreateModal'
 import JoinModal from '../modals/JoinModal'
 import PracticeAIModal from '../modals/PracticeAIModal'
 import PracticeFriendModal from '../modals/PracticeFriendModal'
 import { useAuthStore } from '../../stores/authStore'
 import { useUserStore } from '../../stores/userStore'
-import { useLeaderboard } from '../../hooks/useLeaderboard'
-import { Link } from 'react-router-dom'
 import { useChatStore } from '../../stores/chatStore'
-
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
 type Tab = 'play' | 'chat' | 'stats' | null
 type ModalState = 'create' | 'join' | 'host' | 'practiceAI' | 'friend' | null
@@ -28,19 +22,6 @@ const MOCK_STATS = {
   totalEarnings: 12.4832,
 }
 const MOCK_TRUST = 78
-
-interface LiveGame {
-  id: string
-  white: { username: string | null; wallet: string } | null
-  black: { username: string | null; wallet: string } | null
-  prizePool: number
-  timeControl: number | null
-}
-
-function playerName(p: { username: string | null; wallet: string } | null) {
-  if (!p) return '???'
-  return p.username ?? `${p.wallet.slice(0, 4)}…${p.wallet.slice(-4)}`
-}
 
 interface BottomTabBarProps {
   activePrivateChat?: string | null
@@ -56,7 +37,6 @@ export default function BottomTabBar({ activePrivateChat, activeChatUsername, on
   const { setVisible } = useWalletModal()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated())
   const { stats, trustScore } = useUserStore()
-  const { entries: topPlayers } = useLeaderboard(5)
   const { setActivePrivateChat } = useChatStore()
 
   const displayStats = stats ?? MOCK_STATS
