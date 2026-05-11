@@ -30,7 +30,7 @@ export default function LeftSidebar({ onClickUser }: LeftSidebarProps) {
   return (
     <aside
       id="tour-left-sidebar"
-      className="fixed top-[60px] left-0 bottom-0 w-[350px] flex flex-col overflow-hidden"
+      className="hidden md:flex fixed top-[60px] left-0 bottom-0 w-[350px] flex-col overflow-hidden"
       style={{
         background: 'rgba(19, 19, 26, 0.8)',
         backdropFilter: 'blur(12px)',

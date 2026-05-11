@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useIsMobile } from '../hooks/useIsMobile'
 import ChessBoard from '../components/chess/ChessBoard'
 import MoveHistory from '../components/chess/MoveHistory'
 import LiveIndicator from '../components/ui/LiveIndicator'
@@ -588,6 +589,7 @@ export default function GamePage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { wallet } = useUserStore()
+  const isMobile = useIsMobile()
 
 
   const [game, setGame] = useState<GameData | null>(null)
@@ -876,10 +878,13 @@ export default function GamePage() {
   const isOwner = game.creatorColor === playerColor
 
   return (
-    <div className="flex gap-3 px-4 py-3 h-[calc(100vh-140px)]">
+    <div className={isMobile
+      ? "flex flex-col gap-3 px-2 py-2"
+      : "flex gap-3 px-4 py-3 h-[calc(100vh-140px)]"
+    }>
 
       {/* Left: stake panel (public) OR practice controls */}
-      <div className="w-[200px] flex-shrink-0 flex flex-col gap-2">
+      {!isMobile && <div className="w-[200px] flex-shrink-0 flex flex-col gap-2">
         {!isPractice ? (
           <LeftPanel
             gameId={game.id}
@@ -955,10 +960,10 @@ export default function GamePage() {
             )}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Centre: board + players + banners */}
-      <div className="flex flex-col gap-2 flex-1 min-w-0">
+      <div className={isMobile ? "flex flex-col gap-2 w-full" : "flex flex-col gap-2 flex-1 min-w-0"}>
 
         {/* Disconnect banner */}
         {opponentDisconnected && <DisconnectBanner isPractice={isPractice} isUntimed={!isTimed} />}
@@ -981,8 +986,8 @@ export default function GamePage() {
           showTimer={showTimer}
         />
 
-        <div className="flex-1 flex items-center justify-center min-h-0 relative overflow-hidden">
-          <div style={{ width: 'min(100%, calc(100vh - 300px))', aspectRatio: '1 / 1' }}>
+        <div className="flex items-center justify-center relative overflow-hidden">
+          <div style={{ width: isMobile ? 'min(100vw - 16px, 480px)' : 'min(100%, calc(100vh - 300px))', aspectRatio: '1 / 1' }}>
             <ChessBoard
               position={board}
               orientation={orientation}
@@ -1025,7 +1030,7 @@ export default function GamePage() {
       </div>
 
       {/* Right: move history (public) OR resign/info (practice) */}
-      {!isPractice && (
+      {!isPractice && !isMobile && (
         <div className="w-[180px] flex-shrink-0 flex flex-col gap-2">
           <div className="flex-1 overflow-hidden" style={{ background: '#13131a', border: '1.5px solid #2a2a3a' }}>
             <div className="px-3 py-2 flex-shrink-0" style={{ borderBottom: '1px solid #2a2a3a' }}>

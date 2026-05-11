@@ -24,7 +24,7 @@ export default function ActionBar() {
   return (
     <>
       <div
-        className="fixed bottom-0 left-[350px] right-[350px] h-[80px] flex items-center justify-around px-4 z-40"
+        className="hidden md:flex fixed bottom-0 left-[350px] right-[350px] h-[80px] items-center justify-around px-4 z-40"
         style={{
           background: 'rgba(10,10,15,0.9)',
           backdropFilter: 'blur(12px)',

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import LiveIndicator from '../components/ui/LiveIndicator'
@@ -22,6 +23,7 @@ function fmt(s: number) {
 }
 
 export default function HomePage() {
+  const isMobile = useIsMobile()
   const [fen, setFen] = useState('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
   const [lastMove, setLastMove] = useState<Record<string, React.CSSProperties>>({})
   const [movePairs, setMovePairs] = useState<SanMove[]>([])
@@ -161,9 +163,8 @@ export default function HomePage() {
             className="overflow-hidden"
             style={{
               border: '2px solid #2a2a3a',
-              width: 'min(100%, calc(100vh - 320px))',
-              height: 'min(100%, calc(100vh - 320px))',
-              aspectRatio: '1',
+              width: isMobile ? 'min(100vw - 16px, 480px)' : 'min(100%, calc(100vh - 320px))',
+              aspectRatio: '1 / 1',
             }}
           >
             <Chessboard
@@ -181,8 +182,8 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Move history panel */}
-        <div
+        {/* Move history panel — hidden on mobile */}
+        {!isMobile && <div
           className="w-[200px] flex-shrink-0 flex flex-col overflow-hidden"
           style={{ background: '#13131a', border: '1.5px solid #2a2a3a' }}
         >
@@ -229,7 +230,7 @@ export default function HomePage() {
               ))
             )}
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* White player card */}

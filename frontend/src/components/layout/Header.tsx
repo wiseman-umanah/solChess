@@ -66,8 +66,8 @@ export default function Header() {
         </span>
       </Link>
 
-      {/* Nav */}
-      <nav className="flex items-center gap-3" aria-label="Main navigation">
+      {/* Nav — hidden on mobile, shown on desktop */}
+      <nav className="hidden md:flex items-center gap-3" aria-label="Main navigation">
         {/* Back / Forward */}
         <GradientArrow direction="back" onClick={() => navigate(-1)} disabled={!canGoBack} />
 
@@ -94,7 +94,7 @@ export default function Header() {
           )
         })}
 
-		<GradientArrow direction="forward" onClick={() => navigate(1)} disabled={!canGoForward} />
+        <GradientArrow direction="forward" onClick={() => navigate(1)} disabled={!canGoForward} />
       </nav>
 
       {/* Wallet */}
